@@ -71,17 +71,17 @@
     <!-- Main Content Area -->
     <main class="flex-1 min-w-0 p-6 sm:p-8">
       
-      <!-- PAGE 1: BERANDA (PAYROLL TUTOR SAC & LOS) -->
+      <!-- PAGE 1: BERANDA (PAYROLL TUTOR BERBASIS TARIF INDIVIDU) -->
       <section id="page-beranda" class="space-y-6">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
           <div>
             <h1 class="text-2xl font-bold text-[#1d2327]">Beranda — Payroll & Honor Tutor</h1>
-            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Honor SAC & LOS (termasuk Hybrid Zahra) berbasis rentang tanggal dari tab <span class="font-semibold text-slate-700">DataForm</span>.</p>
+            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Honor SAC, LOS, Hybrid Arianna, Pesantren dll. sesuai dengan <span class="font-semibold text-slate-700">Setting Tarif Individu Tutor</span>.</p>
           </div>
         </div>
 
-        <!-- Filter & Parameter -->
-        <div class="bg-white p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+        <!-- Filter Tanggal -->
+        <div class="bg-white p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           <div>
             <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Mulai</label>
             <input type="date" id="start-date" onchange="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
@@ -89,14 +89,6 @@
           <div>
             <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Selesai</label>
             <input type="date" id="end-date" onchange="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
-          </div>
-          <div>
-            <label class="block font-semibold uppercase text-slate-600 mb-1">Tarif SAC / Sesi (Rp)</label>
-            <input type="number" id="rate-sac" value="35000" step="1000" oninput="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
-          </div>
-          <div>
-            <label class="block font-semibold uppercase text-slate-600 mb-1">Tarif LOS / Sesi (Rp)</label>
-            <input type="number" id="rate-los" value="45000" step="1000" oninput="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
           </div>
         </div>
 
@@ -107,7 +99,7 @@
             <h3 id="stat-sac-count" class="text-2xl font-bold text-slate-900 mt-1">0 Sesi</h3>
           </div>
           <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-sky-500">
-            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi LOS</p>
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi LOS & Lainnya</p>
             <h3 id="stat-los-count" class="text-2xl font-bold text-slate-900 mt-1">0 Sesi</h3>
           </div>
           <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-purple-600">
@@ -142,9 +134,9 @@
                 <tr class="bg-slate-100 border-b border-slate-300 font-bold uppercase text-slate-600">
                   <th class="p-3.5">Nama Tutor</th>
                   <th class="p-3.5 text-center">Sesi SAC</th>
-                  <th class="p-3.5 text-center">Sesi LOS</th>
-                  <th class="p-3.5 text-right">Subtotal SAC</th>
-                  <th class="p-3.5 text-right">Subtotal LOS</th>
+                  <th class="p-3.5 text-center">Sesi LOS & Lainnya</th>
+                  <th class="p-3.5 text-right">Subtotal Honor SAC</th>
+                  <th class="p-3.5 text-right">Subtotal Honor LOS & Lainnya</th>
                   <th class="p-3.5 text-right">Total Honor Diterima</th>
                 </tr>
               </thead>

@@ -124,11 +124,57 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA (Urutan: Users -> Payroll -> SalarySettings)
+// FETCH ALL DATA (Urutan: Users -> SalarySettings -> DataForm -> Attendance)
 async function fetchAllData() {
   await fetchAttendanceAndUsers();
-  await fetchPayrollData();
   await fetchSalarySettings();
+  await fetchPayrollData();
+}
+
+// ========================================================
+// Helper untuk Menghitung Tarif per Sesi Mengajar Tutor
+// ========================================================
+function calculateSessionHonor(tutorName, category, kelas) {
+  const nameClean = tutorName.trim().toLowerCase();
+  
+  // Cari data setting tarif tutor dari tutorSalarySettings
+  const tutorSetting = tutorSalarySettings.find(t => t.nama.trim().toLowerCase() === nameClean);
+
+  const cat = (category || '').toUpperCase();
+  const kls = (kelas || '').toUpperCase();
+
+  // Jika setting spesifik tutor ditemukan:
+  if (tutorSetting) {
+    if (cat.includes('ARIANNA') || kls.includes('ARIANNA')) {
+      return tutorSetting.honorHybrid || tutorSetting.honorSAC || 75000;
+    }
+    if (cat.includes('PESANTREN') || kls.includes('PESANTREN')) {
+      return tutorSetting.honorPesantren || tutorSetting.honorLOSSD || 75000;
+    }
+    if (cat.includes('LOS SD') || kls.includes('LOS SD') || (kls.includes('SD') && cat.includes('LOS'))) {
+      return tutorSetting.honorLOSSD || 50000;
+    }
+    if (cat.includes('LOS SMP') || kls.includes('LOS SMP') || (kls.includes('SMP') && cat.includes('LOS'))) {
+      return tutorSetting.honorLOSSMP || tutorSetting.honorLOSSD || 107000;
+    }
+    if (cat.includes('LOS SMA') || kls.includes('LOS SMA') || (kls.includes('SMA') && cat.includes('LOS'))) {
+      if (cat.includes('LUAR') || kls.includes('LUAR')) {
+        return tutorSetting.honorLOSSMALK || 137500;
+      }
+      return tutorSetting.honorLOSSMADK || 125000;
+    }
+    if (cat.includes('ZAHRA') || kls.includes('ZAHRA') || cat.includes('LOS')) {
+      // Hybrid Zahra / General LOS -> ambil tarif LOS SD / LOS SMP / default
+      return tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 50000;
+    }
+    
+    // Default jika kategori SAC
+    return tutorSetting.honorSAC || 50000;
+  }
+
+  // Fallback default jika nama tutor belum terdaftar di setting tarif
+  if (cat.includes('LOS') || cat.includes('ZAHRA')) return 45000;
+  return 35000;
 }
 
 // ========================================================
@@ -163,8 +209,6 @@ async function fetchPayrollData() {
 function processPayrollData() {
   const startDate = document.getElementById('start-date').value;
   const endDate = document.getElementById('end-date').value;
-  const rateSAC = parseFloat(document.getElementById('rate-sac').value) || 0;
-  const rateLOS = parseFloat(document.getElementById('rate-los').value) || 0;
 
   const filteredRows = rawPayrollData.filter(item => {
     if (!item.tanggal) return true;
@@ -177,10 +221,11 @@ function processPayrollData() {
   filteredRows.forEach(item => {
     const nama = item.tutor;
     if (!tutorMap[nama]) {
-      tutorMap[nama] = { nama, countSAC: 0, countLOS: 0 };
+      tutorMap[nama] = { nama, countSAC: 0, countLOS: 0, subtotalSAC: 0, subtotalLOS: 0 };
     }
 
-    // RULE: Jika Kategori/Kelas bernilai 'LOS' ATAU mengandung 'HYBRID ZAHRA' / 'ZAHRA' -> Terhitung LOS
+    const honorRate = calculateSessionHonor(nama, item.kategori, item.kelas);
+
     const isLOS = item.kategori.includes('LOS') || 
                   item.kategori.includes('ZAHRA') || 
                   item.kelas.includes('ZAHRA') ||
@@ -188,15 +233,18 @@ function processPayrollData() {
 
     if (isLOS) {
       tutorMap[nama].countLOS += 1;
+      tutorMap[nama].subtotalLOS += honorRate;
     } else {
       tutorMap[nama].countSAC += 1;
+      tutorMap[nama].subtotalSAC += honorRate;
     }
   });
 
   processedPayrollSummary = Object.values(tutorMap).map(tutor => {
-    const subtotalSAC = tutor.countSAC * rateSAC;
-    const subtotalLOS = tutor.countLOS * rateLOS;
-    return { ...tutor, subtotalSAC, subtotalLOS, totalHonor: subtotalSAC + subtotalLOS };
+    return {
+      ...tutor,
+      totalHonor: tutor.subtotalSAC + tutor.subtotalLOS
+    };
   });
 
   processedPayrollSummary.sort((a, b) => a.nama.localeCompare(b.nama));
@@ -446,7 +494,6 @@ async function fetchSalarySettings() {
     const data = await fetchGVizJson(URL_SALARYSETTINGS);
     const rows = data.table.rows || [];
 
-    // Kumpulkan Set Nama Pegawai yang Berjabatan Tutor dari usersMap
     const tutorNamesFromUsers = new Set(
       Object.values(usersMap)
         .filter(u => u.jabatan && u.jabatan.toLowerCase().includes('tutor'))
@@ -459,7 +506,6 @@ async function fetchSalarySettings() {
       const nama = String(getCellValue(row, 0)).trim();
       const namaLower = nama.toLowerCase();
 
-      // Cek apakah nama ini termasuk dalam daftar Tutor di sheet Users / berjabatan Tutor
       const isTutorRole = tutorNamesFromUsers.size === 0 
         ? (!namaLower.includes('admin') && !namaLower.includes('office') && !namaLower.includes('direktur'))
         : tutorNamesFromUsers.has(namaLower);
@@ -499,7 +545,6 @@ async function fetchSalarySettings() {
 }
 
 function useDefaultSalarySettings() {
-  // Fallback Tutor Master List
   const defaultTutors = [
     "ANNE NURMELIYANTI, S.Pd", "SUHAYATI, S.Sos", "AGUSTINA PRAJAWATI", "FADIL MUHAMMAD, S.Pd",
     "INDRA LESMANA, S.Pd", "LIA LIANTINA, S.Farm", "SHIFA AWIYAH", "YENI MAULIDAH",
@@ -573,6 +618,7 @@ function saveTutorTarif() {
   tutorSalarySettings[idx].honorLOSSMALK = parseFloat(document.getElementById('input-honor-los-sma-lk').value) || 0;
 
   renderTarifTutorTable();
+  processPayrollData(); // Update juga perhitungan Beranda secara langsung
   alert(`Nominal honor untuk ${tutorSalarySettings[idx].nama} berhasil diperbarui!`);
 }
 
