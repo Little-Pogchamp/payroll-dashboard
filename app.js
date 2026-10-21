@@ -7,8 +7,8 @@ const URL_ATTENDANCE = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}
 const URL_SALARYSETTINGS = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=SalarySettings`;
 
 // Global State
-let rawAllSessions = []; 
-let rawPayrollData = []; 
+let rawAllSessions = []; // Semua sesi mentah gabungan (DataForm + Attendance)
+let rawPayrollData = []; // Sesi aktif setelah difilter & dikecualikan
 let processedPayrollSummary = [];
 
 let usersMap = {};
@@ -17,9 +17,8 @@ let processedAttendanceSummary = [];
 
 let tutorSalarySettings = [];
 
-// LocalStorage Keys
+// LocalStorage Key for Deleted/Excluded Sessions
 const STORAGE_EXCLUDED_KEY = 'carnation_excluded_sessions_v1';
-const STORAGE_IGNORED_LATE_KEY = 'carnation_ignored_late_v1';
 
 function getExcludedSessionIds() {
   try {
@@ -33,21 +32,6 @@ function getExcludedSessionIds() {
 function saveExcludedSessionIds(arrayIds) {
   try {
     localStorage.setItem(STORAGE_EXCLUDED_KEY, JSON.stringify(arrayIds));
-  } catch (e) {}
-}
-
-function getIgnoredLateKeys() {
-  try {
-    const saved = localStorage.getItem(STORAGE_IGNORED_LATE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveIgnoredLateKeys(arrayKeys) {
-  try {
-    localStorage.setItem(STORAGE_IGNORED_LATE_KEY, JSON.stringify(arrayKeys));
   } catch (e) {}
 }
 
@@ -69,6 +53,7 @@ const daftarHonorKegiatanMaster = [
   { no: 14, kegiatan: "HONOR WEEKLY REPORT (PERLEMBAR)", honor: 3750 }
 ];
 
+// Helper Clean String (Normalisasi Non-Breaking Space & Whitespace)
 function cleanStr(val) {
   if (val === null || val === undefined) return '';
   return String(val).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -84,6 +69,7 @@ function cleanName(name) {
     .toLowerCase();
 }
 
+// Format Angka ke Rupiah Formatted
 function formatRupiah(number) {
   if (number === null || number === undefined || number === '' || isNaN(number) || number === 0) {
     return '-';
@@ -96,6 +82,7 @@ function formatNumberExcel(number) {
   return new Intl.NumberFormat('id-ID').format(number);
 }
 
+// Mapping bulan Bahasa Indonesia
 const indonesianMonths = {
   'januari': '01', 'jan': '01',
   'februari': '02', 'feb': '02',
@@ -349,16 +336,11 @@ function processPayrollData() {
   const startDate = document.getElementById('start-date').value;
   const endDate = document.getElementById('end-date').value;
 
-  const ignoredLateSet = new Set(getIgnoredLateKeys());
-
-  // Set Tanggal Keterlambatan Tutor dari Attendance (Kecuali yang sudah diabaikan/dihapus admin)
+  // Set Tanggal Keterlambatan Tutor dari Attendance: Set of "tutor_clean|yyyy-mm-dd"
   const lateDatesMap = new Set();
   rawAttendanceData.forEach(att => {
     if (att.status && att.status.toUpperCase() === 'TERLAMBAT' && att.nama && att.tanggal) {
-      const lateKey = `${cleanName(att.nama)}|${att.tanggal}`;
-      if (!ignoredLateSet.has(lateKey)) {
-        lateDatesMap.add(lateKey);
-      }
+      lateDatesMap.add(`${cleanName(att.nama)}|${att.tanggal}`);
     }
   });
 
@@ -369,13 +351,14 @@ function processPayrollData() {
     return true;
   });
 
+  // Urutkan sesi berdasarkan tanggal & jam masuk agar 1 SAC pertama teridentifikasi dengan tepat
   filteredRows.sort((a, b) => {
     if (a.tanggal !== b.tanggal) return a.tanggal.localeCompare(b.tanggal);
     return (a.jamMasuk || '').localeCompare(b.jamMasuk || '');
   });
 
   const tutorMap = {};
-  const penalizedSacDates = new Set();
+  const penalizedSacDates = new Set(); // Melacak apakah potongan 50% SAC ke-1 sudah dikenakan pada hari tersebut
 
   filteredRows.forEach(item => {
     const nama = item.tutor;
@@ -497,6 +480,7 @@ function filterPayrollTable() {
   renderPayrollTable(filtered);
 }
 
+// EKSPOR EXCEL RINGKAS
 function exportPayrollExcel() {
   if (!processedPayrollSummary || processedPayrollSummary.length === 0) {
     alert("Tidak ada data payroll untuk diekspor!");
@@ -623,7 +607,7 @@ function exportPayrollCSV() {
 }
 
 // ========================================================
-// 2. PAGE KELOLA SESI & DENDA TERLAMBAT
+// 2. PAGE KELOLA / HAPUS SESI TUTOR
 // ========================================================
 
 function populateKelolaDropdowns() {
@@ -647,10 +631,6 @@ function renderKelolaSesiPage() {
   const inputDate = document.getElementById('kelola-input-date');
   const tbody = document.getElementById('kelola-table-body');
   const excludedContainer = document.getElementById('excluded-list-container');
-  const lateBox = document.getElementById('kelola-late-warning-box');
-  const lateTitle = document.getElementById('late-box-title');
-  const lateDesc = document.getElementById('late-box-desc');
-  const lateAction = document.getElementById('late-box-action');
 
   if (!tbody || !selectTutor || !inputDate) return;
 
@@ -658,48 +638,6 @@ function renderKelolaSesiPage() {
   const targetDate = inputDate.value;
 
   const excludedIds = new Set(getExcludedSessionIds());
-  const ignoredLateKeys = new Set(getIgnoredLateKeys());
-
-  // Cek Status Keterlambatan Tutor di Hari Ini dari Presensi
-  let isTutorLateToday = false;
-  let targetLateKey = "";
-  let matchedTutorRealName = "";
-
-  if (targetTutorClean && targetDate) {
-    const attMatch = rawAttendanceData.find(a => cleanName(a.nama) === targetTutorClean && a.tanggal === targetDate);
-    if (attMatch) {
-      matchedTutorRealName = attMatch.nama;
-      if (attMatch.status && attMatch.status.toUpperCase() === 'TERLAMBAT') {
-        isTutorLateToday = true;
-        targetLateKey = `${targetTutorClean}|${targetDate}`;
-      }
-    }
-  }
-
-  if (isTutorLateToday) {
-    lateBox.classList.remove('hidden');
-    const isAlreadyIgnored = ignoredLateKeys.has(targetLateKey);
-
-    if (isAlreadyIgnored) {
-      lateTitle.innerText = "Denda Terlambat Telah Dibatalkan / Dihapus";
-      lateDesc.innerHTML = `Keterlambatan untuk <b>${matchedTutorRealName}</b> pada ${targetDate} telah <b>dihapus oleh Admin</b> (Denda 50% dibatalkan & honor SAC penuh).`;
-      lateAction.innerHTML = `
-        <button onclick="restoreLatePenalty('${targetLateKey}')" class="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white font-medium px-3 py-1.5 rounded text-xs transition">
-          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Batalkan & Kena Denda Lagi
-        </button>
-      `;
-    } else {
-      lateTitle.innerText = "Terdeteksi Terlambat Presensi";
-      lateDesc.innerHTML = `<b>${matchedTutorRealName}</b> tercatat <b>Terlambat</b> pada tanggal <b>${targetDate}</b>. Potongan 50% berlaku pada 1 SAC pertama.`;
-      lateAction.innerHTML = `
-        <button onclick="ignoreLatePenalty('${targetLateKey}')" class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded text-xs transition shadow-sm">
-          <i data-lucide="check-circle" class="w-4 h-4"></i> Hapus Denda Terlambat (Kendala Device/HP)
-        </button>
-      `;
-    }
-  } else {
-    lateBox.classList.add('hidden');
-  }
 
   const matchedSessions = rawAllSessions.filter(s => {
     if (targetTutorClean && cleanName(s.tutor) !== targetTutorClean) return false;
@@ -749,37 +687,12 @@ function renderKelolaSesiPage() {
     });
   }
 
-  // Render Daftar Sesi & Denda yang Dikecualikan
   const deletedItems = rawAllSessions.filter(s => excludedIds.has(s.id) || excludedIds.has(s.dedupKey));
-  const ignoredLatesArr = Array.from(ignoredLateKeys);
-
   excludedContainer.innerHTML = '';
 
-  if (deletedItems.length === 0 && ignoredLatesArr.length === 0) {
-    excludedContainer.innerHTML = `<p class="text-slate-500 italic">Belum ada item yang dihapus.</p>`;
+  if (deletedItems.length === 0) {
+    excludedContainer.innerHTML = `<p class="text-slate-500 italic">Belum ada sesi yang dihapus.</p>`;
   } else {
-    // 1. Denda Terlambat Dibatalkan
-    ignoredLatesArr.forEach(lateKey => {
-      const parts = lateKey.split('|');
-      const tName = parts[0];
-      const tDate = parts[1];
-
-      const div = document.createElement('div');
-      div.className = 'flex items-center justify-between bg-amber-50 p-2.5 rounded border border-amber-300 shadow-sm';
-      div.innerHTML = `
-        <div>
-          <span class="font-bold text-amber-900 capitalize">${tName}</span>
-          <span class="text-slate-600 font-medium">(${tDate})</span>
-          <span class="ml-2 font-semibold text-emerald-700">✓ Denda Terlambat Dihapus (Kendala HP/App Error)</span>
-        </div>
-        <button onclick="restoreLatePenalty('${lateKey}')" class="flex items-center gap-1 bg-slate-700 hover:bg-slate-800 text-white font-medium px-2 py-1 rounded text-[10px] transition">
-          <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Kembalikan Denda
-        </button>
-      `;
-      excludedContainer.appendChild(div);
-    });
-
-    // 2. Sesi Mengajar Dihapus
     deletedItems.forEach(item => {
       const div = document.createElement('div');
       div.className = 'flex items-center justify-between bg-white p-2.5 rounded border border-red-200 shadow-sm';
@@ -790,7 +703,7 @@ function renderKelolaSesiPage() {
           <span class="ml-2 font-semibold text-red-600">${item.kategori} - ${item.kelas || ''}</span>
         </div>
         <button onclick="restoreSession('${item.id}', '${item.dedupKey}')" class="flex items-center gap-1 bg-slate-700 hover:bg-slate-800 text-white font-medium px-2 py-1 rounded text-[10px] transition">
-          <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Batal Hapus (Restore Sesi)
+          <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Batal Hapus (Restore)
         </button>
       `;
       excludedContainer.appendChild(div);
@@ -798,27 +711,6 @@ function renderKelolaSesiPage() {
   }
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
-}
-
-function ignoreLatePenalty(lateKey) {
-  const current = getIgnoredLateKeys();
-  if (!current.includes(lateKey)) {
-    current.push(lateKey);
-    saveIgnoredLateKeys(current);
-  }
-  processPayrollData();
-  renderKelolaSesiPage();
-  renderIndividualPayrollPage();
-}
-
-function restoreLatePenalty(lateKey) {
-  let current = getIgnoredLateKeys();
-  current = current.filter(k => k !== lateKey);
-  saveIgnoredLateKeys(current);
-
-  processPayrollData();
-  renderKelolaSesiPage();
-  renderIndividualPayrollPage();
 }
 
 function excludeSession(id, dedupKey) {
@@ -851,9 +743,8 @@ function restoreSession(id, dedupKey) {
 }
 
 function resetAllExclusions() {
-  if (confirm("Apakah Anda yakin ingin mengembalikan SEMUA sesi yang pernah dihapus & membatalkan penghapusan denda?")) {
+  if (confirm("Apakah Anda yakin ingin mengembalikan SEMUA sesi yang pernah dihapus?")) {
     saveExcludedSessionIds([]);
-    saveIgnoredLateKeys([]);
     rawPayrollData = [...rawAllSessions];
     processPayrollData();
     renderKelolaSesiPage();
@@ -909,16 +800,11 @@ function renderIndividualPayrollPage() {
     return;
   }
 
-  const ignoredLateSet = new Set(getIgnoredLateKeys());
-
-  // Set Tanggal Keterlambatan khusus tutor ini (Kecuali yang sudah diabaikan admin)
+  // Set Tanggal Keterlambatan khusus tutor ini dari Attendance
   const lateDatesMap = new Set();
   rawAttendanceData.forEach(att => {
     if (att.status && att.status.toUpperCase() === 'TERLAMBAT' && cleanName(att.nama) === targetTutorClean && att.tanggal) {
-      const lKey = `${targetTutorClean}|${att.tanggal}`;
-      if (!ignoredLateSet.has(lKey)) {
-        lateDatesMap.add(att.tanggal);
-      }
+      lateDatesMap.add(att.tanggal);
     }
   });
 
@@ -966,12 +852,8 @@ function renderIndividualPayrollPage() {
     let sessionHonor = info.rate;
     let statusLabel = `<span class="text-emerald-700 font-medium">Hadir Tepat Waktu</span>`;
 
-    const lKey = `${targetTutorClean}|${s.tanggal}`;
-    const wasIgnoredByAdmin = ignoredLateSet.has(lKey);
-
-    if (wasIgnoredByAdmin) {
-      statusLabel = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">Hadir (Denda Dihapus Admin)</span>`;
-    } else if (lateDatesMap.has(s.tanggal)) {
+    // Cek keterlambatan di hari ini (Potong 50% hanya untuk SAC ke-1)
+    if (lateDatesMap.has(s.tanggal)) {
       if (!isLOS && !penalizedSacDates.has(s.tanggal)) {
         penalizedSacDates.add(s.tanggal);
         sessionHonor = info.rate * 0.5;
@@ -1416,7 +1298,7 @@ function switchTab(tab) {
   } else if (tab === 'kelola') {
     pageKelola.classList.remove('hidden');
     navKelola.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
-    pageTitleTop.innerText = "Kelola Sesi & Denda";
+    pageTitleTop.innerText = "Kelola / Hapus Sesi Tutor";
     renderKelolaSesiPage();
   } else if (tab === 'individual') {
     pageIndividual.classList.remove('hidden');
