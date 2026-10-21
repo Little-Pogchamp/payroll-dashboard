@@ -7,14 +7,33 @@ const URL_ATTENDANCE = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}
 const URL_SALARYSETTINGS = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=SalarySettings`;
 
 // Global State
-let rawPayrollData = [];
+let rawAllSessions = []; // Semua sesi mentah gabungan (DataForm + Attendance)
+let rawPayrollData = []; // Sesi aktif setelah difilter & dikecualikan
 let processedPayrollSummary = [];
 
 let usersMap = {};
 let rawAttendanceData = [];
 let processedAttendanceSummary = [];
 
-let tutorSalarySettings = []; // Data tarif honor per tutor
+let tutorSalarySettings = [];
+
+// LocalStorage Key for Deleted/Excluded Sessions
+const STORAGE_EXCLUDED_KEY = 'carnation_excluded_sessions_v1';
+
+function getExcludedSessionIds() {
+  try {
+    const saved = localStorage.getItem(STORAGE_EXCLUDED_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveExcludedSessionIds(arrayIds) {
+  try {
+    localStorage.setItem(STORAGE_EXCLUDED_KEY, JSON.stringify(arrayIds));
+  } catch (e) {}
+}
 
 // Master List Honor Kegiatan
 const daftarHonorKegiatanMaster = [
@@ -34,10 +53,15 @@ const daftarHonorKegiatanMaster = [
   { no: 14, kegiatan: "HONOR WEEKLY REPORT (PERLEMBAR)", honor: 3750 }
 ];
 
-// Helper Pembersih Nama (Menghapus Gelar untuk Pencocokan Akurat)
+// Helper Clean String (Normalisasi Non-Breaking Space & Whitespace)
+function cleanStr(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function cleanName(name) {
   if (!name) return '';
-  return String(name)
+  return cleanStr(name)
     .replace(/,\s*(S\.Pd|S\.Sos|S\.Farm|S\.T|S\.E|M\.Pd|S\.Kom|S\.Ag)\.?/gi, '')
     .replace(/\b(S\.Pd|S\.Sos|S\.Farm|S\.T|S\.E|M\.Pd|S\.Kom|S\.Ag)\.?\b/gi, '')
     .replace(/[^a-zA-Z0-9\s]/g, '')
@@ -74,7 +98,6 @@ const indonesianMonths = {
   'desember': '12', 'des': '12'
 };
 
-// Helper Null-Safe Cell Reader
 function getCellValue(row, colIndex) {
   if (!row || !row.c || !row.c[colIndex]) return '';
   const cell = row.c[colIndex];
@@ -87,10 +110,9 @@ function getCellFormatted(row, colIndex) {
   return cell.f || (cell.v !== null && cell.v !== undefined ? String(cell.v) : '');
 }
 
-// Konversi Multi-Format Tanggal ke YYYY-MM-DD
 function parseToIsoDate(rawVal, formattedVal) {
-  const rawStr = String(rawVal || '').trim();
-  const fmtStr = String(formattedVal || '').trim();
+  const rawStr = cleanStr(rawVal);
+  const fmtStr = cleanStr(formattedVal);
 
   if (rawStr.includes('Date(')) {
     const matches = rawStr.match(/\d+/g);
@@ -128,7 +150,6 @@ function parseToIsoDate(rawVal, formattedVal) {
   return target.substring(0, 10);
 }
 
-// Helper Fetch & Parse JSON GViz API
 async function fetchGVizJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -140,14 +161,13 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA
 async function fetchAllData() {
   await fetchAttendanceAndUsers();
   await fetchSalarySettings();
   await fetchPayrollData();
+  populateKelolaDropdowns();
 }
 
-// Helper Deteksi Tarif & Label Per Sesi
 function calculateSessionInfo(tutorName, category, kelas) {
   const targetClean = cleanName(tutorName);
   const tutorSetting = tutorSalarySettings.find(t => cleanName(t.nama) === targetClean);
@@ -197,7 +217,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
 }
 
 // ========================================================
-// 1. PAGE BERANDA: PAYROLL TUTOR (DATAFORM + ATTENDANCE LOS)
+// 1. PAGE BERANDA: PAYROLL TUTOR (DATAFORM + ATTENDANCE)
 // ========================================================
 
 async function fetchPayrollData() {
@@ -208,26 +228,28 @@ async function fetchPayrollData() {
     const data = await fetchGVizJson(URL_DATAFORM);
     const rows = data.table.rows || [];
 
-    // 1. Ambil data dari sheet DataForm dengan DEDUPLIKASI BARIS IDENTIK (anti double-submit)
+    // 1. Kumpulkan DataForm dengan ID Unik
     const dataFormItems = [];
-    const seenDataFormKeys = new Set();
+    const seenKeys = new Set();
 
-    rows.forEach(row => {
+    rows.forEach((row, rowIdx) => {
       const isoDate = parseToIsoDate(getCellValue(row, 0), getCellFormatted(row, 0));
-      const tutor = String(getCellValue(row, 1)).trim();
-      const kategori = String(getCellValue(row, 2)).trim().toUpperCase();
-      const jamMasuk = String(getCellValue(row, 3)).trim();
-      const jamKeluar = String(getCellValue(row, 4)).trim();
-      const kelas = String(getCellValue(row, 5)).trim();
-      const mapel = String(getCellValue(row, 6)).trim();
+      const tutor = cleanStr(getCellValue(row, 1));
+      const kategori = cleanStr(getCellValue(row, 2)).toUpperCase();
+      const jamMasuk = cleanStr(getCellFormatted(row, 3) || getCellValue(row, 3));
+      const jamKeluar = cleanStr(getCellFormatted(row, 4) || getCellValue(row, 4));
+      const kelas = cleanStr(getCellValue(row, 5));
+      const mapel = cleanStr(getCellValue(row, 6));
 
       if (tutor && tutor !== 'Tanpa Nama' && tutor !== 'Nama Tutor') {
-        // Kunci unik untuk memfilter entri yang persis sama (double submit)
         const dedupKey = `${isoDate}|${cleanName(tutor)}|${kategori}|${jamMasuk}|${jamKeluar}|${kelas.toLowerCase()}|${mapel.toLowerCase()}`;
+        const uniqueId = `df_${rowIdx}_${dedupKey}`;
 
-        if (!seenDataFormKeys.has(dedupKey)) {
-          seenDataFormKeys.add(dedupKey);
+        if (!seenKeys.has(dedupKey)) {
+          seenKeys.add(dedupKey);
           dataFormItems.push({
+            id: uniqueId,
+            dedupKey: dedupKey,
             tanggal: isoDate,
             tutor: tutor,
             kategori: kategori,
@@ -241,9 +263,9 @@ async function fetchPayrollData() {
       }
     });
 
-    // 2. Ambil presensi LOS dari sheet Attendance
+    // 2. Kumpulkan Presensi LOS dari Attendance
     const attendanceLosItems = [];
-    rawAttendanceData.forEach(att => {
+    rawAttendanceData.forEach((att, attIdx) => {
       const textUpper = (att.keterangan || '').toUpperCase();
       const isLOS = textUpper.includes('LOS') || textUpper.includes('ZAHRA') || textUpper.includes('HYBRID');
 
@@ -261,34 +283,46 @@ async function fetchPayrollData() {
           categoryStr = 'LOS PESANTREN';
         }
 
+        const attDedupKey = `${att.tanggal}|${cleanName(att.nama)}|${categoryStr}`;
+        const attId = `att_${attIdx}_${attDedupKey}`;
+
         attendanceLosItems.push({
+          id: attId,
+          dedupKey: attDedupKey,
           tanggal: att.tanggal,
           tutor: att.nama,
           kategori: categoryStr,
+          jamMasuk: att.jamMasuk,
+          jamKeluar: att.jamKeluar,
           kelas: att.keterangan || 'LOS',
+          mapel: 'Presensi Attendance',
           source: 'Attendance'
         });
       }
     });
 
-    // 3. Gabungkan DataForm & Attendance (mencegah duplikasi ganda antara DataForm & Attendance)
-    const combinedData = [...dataFormItems];
-
+    // 3. Gabungkan DataForm & Attendance
+    const combined = [...dataFormItems];
     attendanceLosItems.forEach(attItem => {
       const isDuplicate = dataFormItems.some(dfItem => 
         cleanName(dfItem.tutor) === cleanName(attItem.tutor) &&
         dfItem.tanggal === attItem.tanggal &&
         (dfItem.kategori.includes('LOS') || dfItem.kategori.includes('ZAHRA'))
       );
-
       if (!isDuplicate) {
-        combinedData.push(attItem);
+        combined.push(attItem);
       }
     });
 
-    rawPayrollData = combinedData;
+    rawAllSessions = combined;
+
+    // Filter dengan daftar sesi yang dikecualikan (deleted/excluded)
+    const excludedIds = new Set(getExcludedSessionIds());
+    rawPayrollData = rawAllSessions.filter(item => !excludedIds.has(item.id) && !excludedIds.has(item.dedupKey));
 
     processPayrollData();
+    renderKelolaSesiPage();
+
   } catch (err) {
     console.error("Error Payroll:", err);
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-600 font-medium">⚠️ Gagal memuat data DataForm: ${err.message}</td></tr>`;
@@ -420,7 +454,7 @@ function filterPayrollTable() {
   renderPayrollTable(filtered);
 }
 
-// EKSPOR EXCEL FORMAT RESMI
+// EKSPOR EXCEL
 function exportPayrollExcel() {
   if (!processedPayrollSummary || processedPayrollSummary.length === 0) {
     alert("Tidak ada data payroll untuk diekspor!");
@@ -561,7 +595,145 @@ function exportPayrollCSV() {
 }
 
 // ========================================================
-// 2. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
+// 2. PAGE BARU: KELOLA / HAPUS SESI TUTOR (ADJUSTMENT)
+// ========================================================
+
+function populateKelolaDropdowns() {
+  const select = document.getElementById('kelola-select-tutor');
+  if (!select) return;
+
+  const tutorSet = new Set();
+  rawAllSessions.forEach(s => tutorSet.add(s.tutor));
+
+  select.innerHTML = '<option value="">-- Semua / Pilih Tutor --</option>';
+  Array.from(tutorSet).sort().forEach(nama => {
+    const opt = document.createElement('option');
+    opt.value = cleanName(nama);
+    opt.textContent = nama;
+    select.appendChild(opt);
+  });
+}
+
+function renderKelolaSesiPage() {
+  const selectTutor = document.getElementById('kelola-select-tutor');
+  const inputDate = document.getElementById('kelola-input-date');
+  const tbody = document.getElementById('kelola-table-body');
+  const excludedContainer = document.getElementById('excluded-list-container');
+
+  if (!tbody || !selectTutor || !inputDate) return;
+
+  const targetTutorClean = selectTutor.value;
+  const targetDate = inputDate.value;
+
+  const excludedIds = new Set(getExcludedSessionIds());
+
+  // Filter Sesi Sesuai Tutor & Tanggal
+  const matchedSessions = rawAllSessions.filter(s => {
+    if (targetTutorClean && cleanName(s.tutor) !== targetTutorClean) return false;
+    if (targetDate && s.tanggal !== targetDate) return false;
+    return true;
+  });
+
+  tbody.innerHTML = '';
+
+  if (matchedSessions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Tidak ada sesi ditemukan. Silakan pilih Tutor atau Tanggal lain.</td></tr>`;
+  } else {
+    matchedSessions.forEach((s, idx) => {
+      const isDeleted = excludedIds.has(s.id) || excludedIds.has(s.dedupKey);
+
+      const isLOS = s.kategori.includes('LOS') || s.kategori.includes('ZAHRA');
+      const badgeKat = isLOS
+        ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">LOS</span>`
+        : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">SAC</span>`;
+
+      const actionBtn = isDeleted
+        ? `<span class="px-2 py-1 rounded bg-slate-200 text-slate-500 font-bold text-[10px]">Telah Dihapus</span>`
+        : `<button onclick="excludeSession('${s.id}', '${s.dedupKey}')" class="flex items-center gap-1 mx-auto bg-red-600 hover:bg-red-700 text-white font-medium px-2.5 py-1 rounded text-[11px] transition">
+            <i data-lucide="trash-2" class="w-3 h-3"></i> Hapus Sesi Ini
+           </button>`;
+
+      const tr = document.createElement('tr');
+      tr.className = isDeleted ? 'bg-red-50/50 opacity-60 border-b border-slate-200' : 'hover:bg-slate-50 border-b border-slate-200';
+      tr.innerHTML = `
+        <td class="p-3 text-center font-semibold text-slate-500">${idx + 1}</td>
+        <td class="p-3 font-semibold text-slate-600">${s.source}</td>
+        <td class="p-3 font-bold text-slate-900">${s.tutor}</td>
+        <td class="p-3 text-center">${badgeKat}</td>
+        <td class="p-3 text-center font-mono">${s.jamMasuk || '-'} - ${s.jamKeluar || '-'}</td>
+        <td class="p-3 text-slate-700 font-medium">${s.kelas || '-'}</td>
+        <td class="p-3 text-slate-600">${s.mapel || '-'}</td>
+        <td class="p-3 text-center">${actionBtn}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Render Daftar Sesi yang Dihapus/Dikecualikan
+  const deletedItems = rawAllSessions.filter(s => excludedIds.has(s.id) || excludedIds.has(s.dedupKey));
+  excludedContainer.innerHTML = '';
+
+  if (deletedItems.length === 0) {
+    excludedContainer.innerHTML = `<p class="text-slate-500 italic">Belum ada sesi yang dihapus.</p>`;
+  } else {
+    deletedItems.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'flex items-center justify-between bg-white p-2.5 rounded border border-red-200 shadow-sm';
+      div.innerHTML = `
+        <div>
+          <span class="font-bold text-slate-900">${item.tutor}</span>
+          <span class="text-slate-500">(${item.tanggal})</span>
+          <span class="ml-2 font-semibold text-red-600">${item.kategori} - ${item.kelas || ''}</span>
+        </div>
+        <button onclick="restoreSession('${item.id}', '${item.dedupKey}')" class="flex items-center gap-1 bg-slate-700 hover:bg-slate-800 text-white font-medium px-2 py-1 rounded text-[10px] transition">
+          <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Batal Hapus (Restore)
+        </button>
+      `;
+      excludedContainer.appendChild(div);
+    });
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function excludeSession(id, dedupKey) {
+  const current = getExcludedSessionIds();
+  if (!current.includes(id)) current.push(id);
+  if (dedupKey && !current.includes(dedupKey)) current.push(dedupKey);
+
+  saveExcludedSessionIds(current);
+
+  const excludedIds = new Set(current);
+  rawPayrollData = rawAllSessions.filter(item => !excludedIds.has(item.id) && !excludedIds.has(item.dedupKey));
+
+  processPayrollData();
+  renderKelolaSesiPage();
+}
+
+function restoreSession(id, dedupKey) {
+  let current = getExcludedSessionIds();
+  current = current.filter(item => item !== id && item !== dedupKey);
+
+  saveExcludedSessionIds(current);
+
+  const excludedIds = new Set(current);
+  rawPayrollData = rawAllSessions.filter(item => !excludedIds.has(item.id) && !excludedIds.has(item.dedupKey));
+
+  processPayrollData();
+  renderKelolaSesiPage();
+}
+
+function resetAllExclusions() {
+  if (confirm("Apakah Anda yakin ingin mengembalikan SEMUA sesi yang pernah dihapus?")) {
+    saveExcludedSessionIds([]);
+    rawPayrollData = [...rawAllSessions];
+    processPayrollData();
+    renderKelolaSesiPage();
+  }
+}
+
+// ========================================================
+// 3. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
 // ========================================================
 
 async function fetchAttendanceAndUsers() {
@@ -574,9 +746,9 @@ async function fetchAttendanceAndUsers() {
     usersMap = {};
 
     userRows.forEach(row => {
-      const idUser = String(getCellValue(row, 0)).trim();
-      const namaUser = String(getCellValue(row, 1)).trim();
-      const jabatanUser = String(getCellValue(row, 2)).trim();
+      const idUser = cleanStr(getCellValue(row, 0));
+      const namaUser = cleanStr(getCellValue(row, 1));
+      const jabatanUser = cleanStr(getCellValue(row, 2));
       if (idUser) {
         usersMap[idUser] = { nama: namaUser, jabatan: jabatanUser };
       }
@@ -586,7 +758,7 @@ async function fetchAttendanceAndUsers() {
     const attRows = attendanceData.table.rows || [];
 
     rawAttendanceData = attRows.map(row => {
-      const col1Val = String(getCellValue(row, 1)).trim();
+      const col1Val = cleanStr(getCellValue(row, 1));
       const userObj = usersMap[col1Val] || {};
 
       let tutorName = userObj.nama || col1Val;
@@ -603,15 +775,15 @@ async function fetchAttendanceAndUsers() {
       if (row && row.c) {
         row.c.forEach(cell => {
           if (cell) {
-            if (cell.v) allRowTextParts.push(String(cell.v));
-            if (cell.f) allRowTextParts.push(String(cell.f));
+            if (cell.v) allRowTextParts.push(cleanStr(cell.v));
+            if (cell.f) allRowTextParts.push(cleanStr(cell.f));
           }
         });
       }
       const fullRowText = allRowTextParts.join(' ');
 
       return {
-        id: getCellValue(row, 0),
+        id: cleanStr(getCellValue(row, 0)),
         userId: col1Val,
         nama: tutorName,
         jabatan: tutorJabatan,
@@ -620,7 +792,7 @@ async function fetchAttendanceAndUsers() {
         jamMasuk: getCellValue(row, 3) || '-',
         jamKeluar: getCellValue(row, 4) || '-',
         keterangan: fullRowText,
-        status: String(getCellValue(row, 9) || 'Hadir').trim(),
+        status: cleanStr(getCellValue(row, 9) || 'Hadir'),
         fotoIn: getCellValue(row, 10)
       };
     }).filter(item => item.nama !== '' && item.tanggal !== '');
@@ -738,7 +910,7 @@ function exportAttendanceCSV() {
 }
 
 // ========================================================
-// 3. PAGE TARIF HONOR TUTOR
+// 4. PAGE TARIF HONOR TUTOR
 // ========================================================
 
 async function fetchSalarySettings() {
@@ -758,7 +930,7 @@ async function fetchSalarySettings() {
     tutorSalarySettings = [];
 
     rows.forEach(row => {
-      const nama = String(getCellValue(row, 0)).trim();
+      const nama = cleanStr(getCellValue(row, 0));
       const namaClean = cleanName(nama);
 
       const isTutorRole = tutorNamesFromUsers.size === 0 
@@ -934,25 +1106,29 @@ function renderKegiatanTable() {
 }
 
 // ========================================================
-// 4. NAVIGATION TAB SWITCHER
+// 5. NAVIGATION TAB SWITCHER
 // ========================================================
 
 function switchTab(tab) {
   const pageBeranda = document.getElementById('page-beranda');
+  const pageKelola = document.getElementById('page-kelola');
   const pageAbsensi = document.getElementById('page-absensi');
   const pageTarif = document.getElementById('page-tarif');
 
   const navBeranda = document.getElementById('nav-beranda');
+  const navKelola = document.getElementById('nav-kelola');
   const navAbsensi = document.getElementById('nav-absensi');
   const navTarif = document.getElementById('nav-tarif');
 
   const pageTitleTop = document.getElementById('page-title-topbar');
 
   pageBeranda.classList.add('hidden');
+  pageKelola.classList.add('hidden');
   pageAbsensi.classList.add('hidden');
   pageTarif.classList.add('hidden');
 
   navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
+  navKelola.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
   navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
   navTarif.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
 
@@ -960,6 +1136,11 @@ function switchTab(tab) {
     pageBeranda.classList.remove('hidden');
     navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
     pageTitleTop.innerText = "Beranda (Payroll Tutor)";
+  } else if (tab === 'kelola') {
+    pageKelola.classList.remove('hidden');
+    navKelola.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
+    pageTitleTop.innerText = "Kelola / Hapus Sesi Tutor";
+    renderKelolaSesiPage();
   } else if (tab === 'absensi') {
     pageAbsensi.classList.remove('hidden');
     navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';

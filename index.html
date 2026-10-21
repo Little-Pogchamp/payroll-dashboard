@@ -35,26 +35,32 @@
   </header>
 
   <div class="flex flex-1 relative">
-    <!-- WordPress Left Sidebar Navigation (Statis / Sticky) -->
+    <!-- WordPress Left Sidebar Navigation -->
     <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 h-[calc(100vh-2.5rem)] sticky top-10 flex flex-col justify-between select-none z-20">
       <div>
         <div class="p-4 border-b border-slate-800">
           <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">NAVIGASI UTAMA</p>
         </div>
         <nav class="mt-2 space-y-1 px-2">
-          <!-- Menu Beranda -->
+          <!-- Menu 1: Beranda -->
           <button id="nav-beranda" onclick="switchTab('beranda')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition">
             <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
             <span>Beranda (Payroll)</span>
           </button>
+
+          <!-- Menu 2 Baru: Kelola / Hapus Sesi -->
+          <button id="nav-kelola" onclick="switchTab('kelola')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
+            <i data-lucide="scissors" class="w-4 h-4 text-amber-400"></i>
+            <span>Kelola / Hapus Sesi</span>
+          </button>
           
-          <!-- Menu Rekap Absensi -->
+          <!-- Menu 3: Rekap Absensi -->
           <button id="nav-absensi" onclick="switchTab('absensi')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="clipboard-list" class="w-4 h-4"></i>
             <span>Rekap Absensi Tutor</span>
           </button>
 
-          <!-- Menu Tarif Honor Tutor -->
+          <!-- Menu 4: Tarif Honor Tutor -->
           <button id="nav-tarif" onclick="switchTab('tarif')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="settings" class="w-4 h-4"></i>
             <span>Tarif Honor Tutor</span>
@@ -71,12 +77,12 @@
     <!-- Main Content Area -->
     <main class="flex-1 min-w-0 p-6 sm:p-8">
       
-      <!-- PAGE 1: BERANDA (PAYROLL TUTOR REKAP RESMI) -->
+      <!-- PAGE 1: BERANDA (PAYROLL REKAP RESMI) -->
       <section id="page-beranda" class="space-y-6">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
           <div>
             <h1 class="text-2xl font-bold text-[#1d2327]">Beranda — Rekap Honor Tutor 2026/2027</h1>
-            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Honor SAC & LOS berbasis rentang tanggal dari tab <span class="font-semibold text-slate-700">DataForm</span> dan presensi LOS dari <span class="font-semibold text-slate-700">Attendance</span>.</p>
+            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Honor SAC & LOS berbasis rentang tanggal dari tab <span class="font-semibold text-slate-700">DataForm</span> dan presensi <span class="font-semibold text-slate-700">Attendance</span>.</p>
           </div>
         </div>
 
@@ -152,7 +158,74 @@
         </div>
       </section>
 
-      <!-- PAGE 2: REKAP ABSENSI (KHUSUS TUTOR) -->
+      <!-- PAGE 2 BARU: KELOLA / HAPUS SESI TUTOR (ADJUSTMENT) -->
+      <section id="page-kelola" class="space-y-6 hidden">
+        <div class="border-b border-slate-300 pb-4">
+          <h1 class="text-2xl font-bold text-[#1d2327]">Kelola / Hapus Sesi SAC & LOS Tutor</h1>
+          <p class="text-xs text-slate-500 mt-1">Pilih tutor dan tanggal untuk melihat seluruh rincian sesi mengajar, lalu hapus/abaikan sesi ganda agar tidak terhitung di Beranda Payroll.</p>
+        </div>
+
+        <!-- Filter Selector -->
+        <div class="bg-white p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase mb-1">Pilih Tutor <span class="text-red-500">*</span></label>
+            <select id="kelola-select-tutor" onchange="renderKelolaSesiPage()" class="w-full px-3 py-2 border border-slate-300 rounded font-semibold text-slate-900 focus:ring-2 focus:ring-[#2271b1] focus:outline-none bg-white">
+              <option value="">-- Semua / Pilih Tutor --</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 uppercase mb-1">Pilih Tanggal <span class="text-red-500">*</span></label>
+            <input type="date" id="kelola-input-date" onchange="renderKelolaSesiPage()" class="w-full px-3 py-2 border border-slate-300 rounded font-semibold text-slate-900 focus:ring-2 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+        </div>
+
+        <!-- Daftar Sesi Aktif -->
+        <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden">
+          <div class="p-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center">
+            <h2 class="font-bold text-xs uppercase text-slate-700 flex items-center gap-2">
+              <i data-lucide="list-checks" class="w-4 h-4 text-emerald-600"></i>
+              Daftar Sesi Mengajar Terdeteksi (SAC & LOS)
+            </h2>
+            <button onclick="resetAllExclusions()" class="text-xs text-red-600 hover:text-red-800 underline flex items-center gap-1 font-medium">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset Semua Sesi yang Dihapus
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                  <th class="p-3 text-center w-10">No</th>
+                  <th class="p-3">Sumber Data</th>
+                  <th class="p-3">Nama Tutor</th>
+                  <th class="p-3 text-center">Kategori</th>
+                  <th class="p-3 text-center">Jam</th>
+                  <th class="p-3">Kelas / Keterangan</th>
+                  <th class="p-3">Mata Pelajaran</th>
+                  <th class="p-3 text-center">Aksi / Hapus</th>
+                </tr>
+              </thead>
+              <tbody id="kelola-table-body" class="divide-y divide-slate-200">
+                <tr>
+                  <td colspan="8" class="p-8 text-center text-slate-400">Silakan pilih Tutor atau Tanggal di atas.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tabel Sesi yang Dihapus/Dikecualikan -->
+        <div class="bg-slate-50 rounded border border-slate-300 p-4 space-y-3">
+          <h3 class="font-bold text-xs text-red-700 uppercase flex items-center gap-1.5">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Daftar Sesi yang Sedang Dihapus / Dikecualikan
+          </h3>
+          <div id="excluded-list-container" class="space-y-2 text-xs">
+            <p class="text-slate-500 italic">Belum ada sesi yang dihapus.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- PAGE 3: REKAP ABSENSI -->
       <section id="page-absensi" class="space-y-6 hidden">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
           <div>
@@ -236,7 +309,7 @@
         </div>
       </section>
 
-      <!-- PAGE 3: TARIF HONOR TUTOR -->
+      <!-- PAGE 4: TARIF HONOR TUTOR -->
       <section id="page-tarif" class="space-y-6 hidden">
         <div class="border-b border-slate-300 pb-4">
           <h1 class="text-2xl font-bold text-[#1d2327]">Input & Setting Nominal Honor Tutor 2026/2027</h1>
@@ -251,7 +324,6 @@
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-            <!-- 1. Pilih Nama Tutor -->
             <div class="lg:col-span-4 bg-slate-50 p-3 rounded border border-slate-200">
               <label class="block font-bold text-slate-700 uppercase mb-1">1. Pilih Nama Tutor <span class="text-red-500">*</span></label>
               <select id="select-tutor-name" onchange="onTutorSelectChange()" class="w-full px-3 py-2 border border-slate-300 rounded font-semibold text-slate-900 focus:ring-2 focus:ring-[#2271b1] focus:outline-none bg-white">
@@ -259,7 +331,6 @@
               </select>
             </div>
 
-            <!-- 2. Input Fields -->
             <div>
               <label class="block font-semibold text-slate-600 uppercase mb-1">Honor SAC (Rp)</label>
               <input type="number" id="input-honor-sac" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
@@ -306,10 +377,8 @@
           </div>
         </div>
 
-        <!-- Tampilan Tabel Sesuai Lembar Fisik HONOR TUTOR 2026/2027 -->
+        <!-- Tampilan Tabel Sesuai Lembar Fisik -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          <!-- Tabel Kiri: Honor Tutor Per Sesi -->
           <div class="lg:col-span-2 bg-white rounded border border-slate-300 shadow-sm overflow-hidden flex flex-col">
             <div class="p-4 bg-slate-100 border-b border-slate-300 font-bold text-xs uppercase text-slate-700 flex justify-between items-center">
               <span>HONOR TUTOR 2026/2027</span>
@@ -339,7 +408,6 @@
             </div>
           </div>
 
-          <!-- Tabel Kanan: Daftar Honor Kegiatan -->
           <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden flex flex-col">
             <div class="p-4 bg-slate-100 border-b border-slate-300 font-bold text-xs uppercase text-slate-700">
               DAFTAR HONOR KEGIATAN
@@ -359,7 +427,6 @@
               </table>
             </div>
           </div>
-
         </div>
       </section>
 
