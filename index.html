@@ -8,7 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- SheetJS CDN (Ekspor Excel & CSV) -->
+  <!-- SheetJS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body class="bg-[#f0f0f1] text-[#2c3338] antialiased min-h-screen font-sans flex flex-col">
@@ -71,12 +71,12 @@
     <!-- Main Content Area -->
     <main class="flex-1 min-w-0 p-6 sm:p-8">
       
-      <!-- PAGE 1: BERANDA (PAYROLL TUTOR BERBASIS TARIF INDIVIDU) -->
+      <!-- PAGE 1: BERANDA (PAYROLL TUTOR REKAP RESMI) -->
       <section id="page-beranda" class="space-y-6">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
           <div>
-            <h1 class="text-2xl font-bold text-[#1d2327]">Beranda — Payroll & Honor Tutor</h1>
-            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Honor SAC, LOS, Hybrid Arianna, Pesantren dll. sesuai dengan <span class="font-semibold text-slate-700">Setting Tarif Individu Tutor</span>.</p>
+            <h1 class="text-2xl font-bold text-[#1d2327]">Beranda — Rekap Honor Tutor 2026/2027</h1>
+            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Rincian Sesi Mengajar & Honor Tutor berbasis rentang tanggal dari tab <span class="font-semibold text-slate-700">DataForm</span>.</p>
           </div>
         </div>
 
@@ -94,12 +94,12 @@
 
         <!-- Summary Stat Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-[#2271b1]">
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-[#059669]">
             <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi SAC</p>
             <h3 id="stat-sac-count" class="text-2xl font-bold text-slate-900 mt-1">0 Sesi</h3>
           </div>
           <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-sky-500">
-            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi LOS & Lainnya</p>
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi LOS</p>
             <h3 id="stat-los-count" class="text-2xl font-bold text-slate-900 mt-1">0 Sesi</h3>
           </div>
           <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-purple-600">
@@ -117,8 +117,8 @@
           <input type="text" id="payroll-search" onkeyup="filterPayrollTable()" placeholder="Cari nama tutor..." class="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
           
           <div class="flex items-center gap-2">
-            <button onclick="exportPayrollExcel()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-3 py-2 rounded text-xs transition">
-              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Ekspor Excel
+            <button onclick="exportPayrollExcel()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-[#059669] hover:bg-emerald-700 text-white font-medium px-3.5 py-2 rounded text-xs transition shadow-sm">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Ekspor Excel Laporan
             </button>
             <button onclick="exportPayrollCSV()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white font-medium px-3 py-2 rounded text-xs transition">
               <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Ekspor CSV
@@ -131,18 +131,20 @@
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
               <thead>
-                <tr class="bg-slate-100 border-b border-slate-300 font-bold uppercase text-slate-600">
-                  <th class="p-3.5">Nama Tutor</th>
-                  <th class="p-3.5 text-center">Sesi SAC</th>
-                  <th class="p-3.5 text-center">Sesi LOS & Lainnya</th>
-                  <th class="p-3.5 text-right">Subtotal Honor SAC</th>
-                  <th class="p-3.5 text-right">Subtotal Honor LOS & Lainnya</th>
-                  <th class="p-3.5 text-right">Total Honor Diterima</th>
+                <tr class="bg-[#059669] text-white font-bold uppercase">
+                  <th class="p-3 text-center w-12">No</th>
+                  <th class="p-3">Nama Tutor</th>
+                  <th class="p-3 text-center">Hadir</th>
+                  <th class="p-3 text-center">SAC</th>
+                  <th class="p-3 text-center">LOS Total</th>
+                  <th class="p-3">Rincian Sesi Mengajar</th>
+                  <th class="p-3 text-center">Kegiatan</th>
+                  <th class="p-3 text-right">Total Honor</th>
                 </tr>
               </thead>
               <tbody id="payroll-table-body" class="divide-y divide-slate-200">
                 <tr>
-                  <td colspan="6" class="p-8 text-center text-slate-400">Memuat data payroll...</td>
+                  <td colspan="8" class="p-8 text-center text-slate-400">Memuat data payroll...</td>
                 </tr>
               </tbody>
             </table>

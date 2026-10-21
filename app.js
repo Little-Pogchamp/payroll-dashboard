@@ -16,7 +16,7 @@ let processedAttendanceSummary = [];
 
 let tutorSalarySettings = []; // Data tarif honor per tutor (khusus role Tutor)
 
-// Master List Honor Kegiatan (Sesuai Gambar Acuan Fisik)
+// Master List Honor Kegiatan
 const daftarHonorKegiatanMaster = [
   { no: 1, kegiatan: "HONOR TRANSPORT", honor: 20000 },
   { no: 2, kegiatan: "HONOR KEGIATAN NON AKADEMIS", honor: 30000 },
@@ -34,12 +34,17 @@ const daftarHonorKegiatanMaster = [
   { no: 14, kegiatan: "HONOR WEEKLY REPORT (PERLEMBAR)", honor: 3750 }
 ];
 
-// Format Angka ke Rupiah
+// Format Angka ke Rupiah Formatted
 function formatRupiah(number) {
   if (number === null || number === undefined || number === '' || isNaN(number) || number === 0) {
     return '-';
   }
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number);
+}
+
+function formatNumberExcel(number) {
+  if (!number) return '0';
+  return new Intl.NumberFormat('id-ID').format(number);
 }
 
 // Mapping bulan Bahasa Indonesia
@@ -124,57 +129,60 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA (Urutan: Users -> SalarySettings -> DataForm -> Attendance)
+// FETCH ALL DATA
 async function fetchAllData() {
   await fetchAttendanceAndUsers();
   await fetchSalarySettings();
   await fetchPayrollData();
 }
 
-// ========================================================
-// Helper untuk Menghitung Tarif per Sesi Mengajar Tutor
-// ========================================================
-function calculateSessionHonor(tutorName, category, kelas) {
+// Helper Deteksi Tarif & Label Per Sesi
+function calculateSessionInfo(tutorName, category, kelas) {
   const nameClean = tutorName.trim().toLowerCase();
-  
-  // Cari data setting tarif tutor dari tutorSalarySettings
   const tutorSetting = tutorSalarySettings.find(t => t.nama.trim().toLowerCase() === nameClean);
 
   const cat = (category || '').toUpperCase();
   const kls = (kelas || '').toUpperCase();
 
-  // Jika setting spesifik tutor ditemukan:
+  let rate = 50000;
+  let labelTag = 'SAC';
+  let detailClass = kls || 'Umum';
+
   if (tutorSetting) {
     if (cat.includes('ARIANNA') || kls.includes('ARIANNA')) {
-      return tutorSetting.honorHybrid || tutorSetting.honorSAC || 75000;
-    }
-    if (cat.includes('PESANTREN') || kls.includes('PESANTREN')) {
-      return tutorSetting.honorPesantren || tutorSetting.honorLOSSD || 75000;
-    }
-    if (cat.includes('LOS SD') || kls.includes('LOS SD') || (kls.includes('SD') && cat.includes('LOS'))) {
-      return tutorSetting.honorLOSSD || 50000;
-    }
-    if (cat.includes('LOS SMP') || kls.includes('LOS SMP') || (kls.includes('SMP') && cat.includes('LOS'))) {
-      return tutorSetting.honorLOSSMP || tutorSetting.honorLOSSD || 107000;
-    }
-    if (cat.includes('LOS SMA') || kls.includes('LOS SMA') || (kls.includes('SMA') && cat.includes('LOS'))) {
+      rate = tutorSetting.honorHybrid || tutorSetting.honorSAC || 75000;
+      labelTag = 'Hybrid Arianna';
+    } else if (cat.includes('PESANTREN') || kls.includes('PESANTREN')) {
+      rate = tutorSetting.honorPesantren || tutorSetting.honorLOSSD || 75000;
+      labelTag = 'LOS Pesantren';
+      detailClass = 'Pesantren (Cibogo)';
+    } else if (cat.includes('LOS SD') || kls.includes('LOS SD') || (kls.includes('SD') && cat.includes('LOS'))) {
+      rate = tutorSetting.honorLOSSD || 97500;
+      labelTag = 'LOS SD';
+      detailClass = kls ? `SD (${kls})` : 'SD (Gendis/Aydin)';
+    } else if (cat.includes('LOS SMP') || kls.includes('LOS SMP') || (kls.includes('SMP') && cat.includes('LOS'))) {
+      rate = tutorSetting.honorLOSSMP || 107000;
+      labelTag = 'LOS SMP';
+      detailClass = kls ? `SMP (${kls})` : 'SMP (Kenzie)';
+    } else if (cat.includes('LOS SMA') || kls.includes('LOS SMA') || (kls.includes('SMA') && cat.includes('LOS'))) {
       if (cat.includes('LUAR') || kls.includes('LUAR')) {
-        return tutorSetting.honorLOSSMALK || 137500;
+        rate = tutorSetting.honorLOSSMALK || 137500;
+      } else {
+        rate = tutorSetting.honorLOSSMADK || 125000;
       }
-      return tutorSetting.honorLOSSMADK || 125000;
+      labelTag = 'LOS SMA';
+      detailClass = kls ? `SMA (${kls})` : 'SMA (Fadil)';
+    } else if (cat.includes('ZAHRA') || kls.includes('ZAHRA') || cat.includes('LOS')) {
+      rate = tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 97500;
+      labelTag = 'LOS SD/General';
+      detailClass = kls ? `LOS (${kls})` : 'LOS';
+    } else {
+      rate = tutorSetting.honorSAC || 50000;
+      labelTag = 'SAC';
     }
-    if (cat.includes('ZAHRA') || kls.includes('ZAHRA') || cat.includes('LOS')) {
-      // Hybrid Zahra / General LOS -> ambil tarif LOS SD / LOS SMP / default
-      return tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 50000;
-    }
-    
-    // Default jika kategori SAC
-    return tutorSetting.honorSAC || 50000;
   }
 
-  // Fallback default jika nama tutor belum terdaftar di setting tarif
-  if (cat.includes('LOS') || cat.includes('ZAHRA')) return 45000;
-  return 35000;
+  return { rate, labelTag, detailClass };
 }
 
 // ========================================================
@@ -183,7 +191,7 @@ function calculateSessionHonor(tutorName, category, kelas) {
 
 async function fetchPayrollData() {
   const tbody = document.getElementById('payroll-table-body');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Memuat data payroll...</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Memuat data payroll...</td></tr>`;
 
   try {
     const data = await fetchGVizJson(URL_DATAFORM);
@@ -195,14 +203,14 @@ async function fetchPayrollData() {
         tanggal: isoDate,
         tutor: String(getCellValue(row, 1)).trim(),
         kategori: String(getCellValue(row, 2)).trim().toUpperCase(),
-        kelas: String(getCellValue(row, 5)).trim().toUpperCase()
+        kelas: String(getCellValue(row, 5)).trim()
       };
     }).filter(item => item.tutor !== '' && item.tutor !== 'Tanpa Nama' && item.tutor !== 'Nama Tutor');
 
     processPayrollData();
   } catch (err) {
     console.error("Error Payroll:", err);
-    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-red-600 font-medium">⚠️ Gagal memuat data DataForm: ${err.message}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-600 font-medium">⚠️ Gagal memuat data DataForm: ${err.message}</td></tr>`;
   }
 }
 
@@ -218,36 +226,74 @@ function processPayrollData() {
   });
 
   const tutorMap = {};
+
   filteredRows.forEach(item => {
     const nama = item.tutor;
     if (!tutorMap[nama]) {
-      tutorMap[nama] = { nama, countSAC: 0, countLOS: 0, subtotalSAC: 0, subtotalLOS: 0 };
+      tutorMap[nama] = {
+        nama,
+        datesSet: new Set(),
+        countSAC: 0,
+        countLOS: 0,
+        totalHonor: 0,
+        losClassCounts: {},
+        tarifBreakdownMap: {},
+        kegiatanNotes: []
+      };
     }
 
-    const honorRate = calculateSessionHonor(nama, item.kategori, item.kelas);
+    if (item.tanggal) {
+      tutorMap[nama].datesSet.add(item.tanggal);
+    }
+
+    const info = calculateSessionInfo(nama, item.kategori, item.kelas);
+    tutorMap[nama].totalHonor += info.rate;
 
     const isLOS = item.kategori.includes('LOS') || 
                   item.kategori.includes('ZAHRA') || 
-                  item.kelas.includes('ZAHRA') ||
+                  item.kelas.toUpperCase().includes('ZAHRA') ||
                   item.kategori.includes('HYBRID ZAHRA');
 
     if (isLOS) {
       tutorMap[nama].countLOS += 1;
-      tutorMap[nama].subtotalLOS += honorRate;
+      const cLabel = info.detailClass;
+      tutorMap[nama].losClassCounts[cLabel] = (tutorMap[nama].losClassCounts[cLabel] || 0) + 1;
     } else {
       tutorMap[nama].countSAC += 1;
-      tutorMap[nama].subtotalSAC += honorRate;
     }
+
+    // Catat breakdown tarif
+    tutorMap[nama].tarifBreakdownMap[info.labelTag] = info.rate;
   });
 
   processedPayrollSummary = Object.values(tutorMap).map(tutor => {
+    // Format Rincian Sesi Mengajar: e.g. "2x SD (Gendis/Aydin), 1x SMA (Fadil)"
+    const rincianParts = [];
+    for (const [klsLabel, count] of Object.entries(tutor.losClassCounts)) {
+      rincianParts.push(`${count}x ${klsLabel}`);
+    }
+    const rincianString = rincianParts.length > 0 ? rincianParts.join(', ') : '-';
+
+    // Format Breakdown Tarif Samping
+    const breakdownTags = [];
+    for (const [tag, rateVal] of Object.entries(tutor.tarifBreakdownMap)) {
+      breakdownTags.push(`${tag} = ${formatNumberExcel(rateVal)}`);
+    }
+
     return {
-      ...tutor,
-      totalHonor: tutor.subtotalSAC + tutor.subtotalLOS
+      nama: tutor.nama,
+      hadir: tutor.datesSet.size || (tutor.countSAC + tutor.countLOS),
+      countSAC: tutor.countSAC,
+      countLOS: tutor.countLOS,
+      rincian: rincianString,
+      kegiatan: tutor.kegiatanNotes.length > 0 ? tutor.kegiatanNotes.join(', ') : '-',
+      totalHonor: tutor.totalHonor,
+      breakdownTags: breakdownTags
     };
   });
 
   processedPayrollSummary.sort((a, b) => a.nama.localeCompare(b.nama));
+
   renderPayrollTable(processedPayrollSummary);
   updatePayrollStats(processedPayrollSummary);
 }
@@ -258,20 +304,22 @@ function renderPayrollTable(data) {
   tbody.innerHTML = '';
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Tidak ada data payroll pada rentang tanggal ini.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Tidak ada data payroll pada rentang tanggal ini.</td></tr>`;
     return;
   }
 
-  data.forEach(tutor => {
+  data.forEach((tutor, idx) => {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-slate-50 transition border-b border-slate-200';
     tr.innerHTML = `
-      <td class="p-3.5 font-bold text-slate-900">${tutor.nama}</td>
-      <td class="p-3.5 text-center font-medium">${tutor.countSAC} Sesi</td>
-      <td class="p-3.5 text-center font-medium">${tutor.countLOS} Sesi</td>
-      <td class="p-3.5 text-right text-slate-600">${formatRupiah(tutor.subtotalSAC)}</td>
-      <td class="p-3.5 text-right text-slate-600">${formatRupiah(tutor.subtotalLOS)}</td>
-      <td class="p-3.5 text-right font-bold text-[#2271b1]">${formatRupiah(tutor.totalHonor)}</td>
+      <td class="p-3 text-center font-semibold text-slate-500">${idx + 1}</td>
+      <td class="p-3 font-bold text-slate-900">${tutor.nama}</td>
+      <td class="p-3 text-center font-semibold text-slate-700">${tutor.hadir}</td>
+      <td class="p-3 text-center font-semibold text-slate-700">${tutor.countSAC}</td>
+      <td class="p-3 text-center font-semibold text-slate-700">${tutor.countLOS}</td>
+      <td class="p-3 text-slate-600 text-[11px]">${tutor.rincian}</td>
+      <td class="p-3 text-center text-slate-500 text-[11px]">${tutor.kegiatan}</td>
+      <td class="p-3 text-right font-bold text-[#059669]">${formatRupiah(tutor.totalHonor)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -294,32 +342,145 @@ function filterPayrollTable() {
   renderPayrollTable(filtered);
 }
 
-// Ekspor Payroll
+// ========================================================
+// EKSPOR EXCEL FORMAT RESMI (SESUAI FILE ACUAN)
+// ========================================================
+
 function exportPayrollExcel() {
-  if (!processedPayrollSummary.length) return alert("Tidak ada data payroll untuk diekspor!");
-  const excelData = processedPayrollSummary.map(item => ({
-    "Nama Tutor": item.nama,
-    "Sesi SAC": item.countSAC,
-    "Sesi LOS": item.countLOS,
-    "Subtotal SAC (Rp)": item.subtotalSAC,
-    "Subtotal LOS (Rp)": item.subtotalLOS,
-    "Total Honor (Rp)": item.totalHonor
-  }));
-  const ws = XLSX.utils.json_to_sheet(excelData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Payroll Tutor");
-  XLSX.writeFile(wb, "Payroll_Tutor_Carnation.xlsx");
+  if (!processedPayrollSummary || processedPayrollSummary.length === 0) {
+    alert("Tidak ada data payroll untuk diekspor!");
+    return;
+  }
+
+  const startDate = document.getElementById('start-date').value || 'Awal';
+  const endDate = document.getElementById('end-date').value || 'Akhir';
+
+  let totalSACAll = 0;
+  let totalLOSAll = 0;
+  let totalHonorAll = 0;
+
+  let rowsHtml = '';
+  processedPayrollSummary.forEach((tutor, idx) => {
+    totalSACAll += tutor.countSAC;
+    totalLOSAll += tutor.countLOS;
+    totalHonorAll += tutor.totalHonor;
+
+    // Menyiapkan 5 kolom rincian tarif samping
+    let tagsCells = '';
+    for (let i = 0; i < 5; i++) {
+      const tagText = tutor.breakdownTags[i] || '';
+      tagsCells += `<td style="font-size:8.5pt;">${tagText}</td>`;
+    }
+
+    rowsHtml += `
+      <tr>
+        <td style="text-align:center;">${idx + 1}</td>
+        <td>${tutor.nama}</td>
+        <td style="text-align:center;">${tutor.hadir}</td>
+        <td style="text-align:center;">${tutor.countSAC}</td>
+        <td style="text-align:center;">${tutor.countLOS}</td>
+        <td style="font-size:8.5pt;">${tutor.rincian}</td>
+        <td style="text-align:center; font-size:8.5pt;">${tutor.kegiatan}</td>
+        <td style="text-align:right; font-weight:bold;">Rp&nbsp;${formatNumberExcel(tutor.totalHonor)}</td>
+        <td style="border:none;"></td>
+        ${tagsCells}
+      </tr>
+    `;
+  });
+
+  const fullExcelHtml = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="UTF-8">
+      <!--[if gte mso 9]>
+      <xml>
+        <x:ExcelWorkbook>
+          <x:ExcelWorksheets>
+            <x:ExcelWorksheet>
+              <x:Name>Laporan Honor</x:Name>
+              <x:WorksheetOptions>
+                <x:Print><x:ValidPrinterInfo/><x:PaperSizeIndex>9</x:PaperSizeIndex><x:Scale>70</x:Scale><x:FitToPage/></x:Print>
+                <x:FitToPage/>
+                <x:PageSetup>
+                  <x:Layout x:Orientation="Landscape"/>
+                  <x:PageMargins x:Header="0.3" x:Footer="0.3" x:Top="0.5" x:Bottom="0.5" x:Left="0.5" x:Right="0.5"/>
+                </x:PageSetup>
+              </x:WorksheetOptions>
+            </x:ExcelWorksheet>
+          </x:ExcelWorksheets>
+        </x:ExcelWorkbook>
+      </xml>
+      <![endif]-->
+      <style>
+        @page { size: A4 landscape; margin: 0.5in; }
+        body { font-family: Calibri, sans-serif; }
+        table { border-collapse: collapse; margin: 0 auto; }
+        th, td { border: 0.5pt solid #000; padding: 6px; font-size: 9.5pt; vertical-align: middle; }
+        .th-header { background-color: #059669; color: #ffffff; font-weight: bold; text-align: center; }
+      </style>
+    </head>
+    <body>
+      <div style="width:1450px; margin:0 auto;">
+        <h3 style="margin-bottom:4px; margin-left: 4px;">HONOR TUTOR 2026/2027</h3>
+        <p style="margin-bottom:12px; margin-left: 4px;"><strong>Periode:</strong> ${startDate} s/d ${endDate}</p>
+        <table style="width:1450px;">
+          <colgroup>
+            <col width="30"><col width="160"><col width="45"><col width="45"><col width="65"><col width="220"><col width="120"><col width="90"><col width="20"><col width="120"><col width="130"><col width="140"><col width="120"><col width="120">
+          </colgroup>
+          <thead>
+            <tr>
+              <th style="background:#059669; color:#fff;">No</th>
+              <th style="background:#059669; color:#fff;">Nama Tutor</th>
+              <th style="background:#059669; color:#fff;">Hadir</th>
+              <th style="background:#059669; color:#fff;">SAC</th>
+              <th style="background:#059669; color:#fff;">LOS Total</th>
+              <th style="background:#059669; color:#fff;">Rincian Sesi Mengajar</th>
+              <th style="background:#059669; color:#fff;">Kegiatan</th>
+              <th style="background:#059669; color:#fff;">Total Honor</th>
+              <th style="border:none;"></th>
+              <th colspan="5" style="border:none;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+            <tr style="background:#e2e8f0; font-weight:bold;">
+              <td colspan="3" style="text-align:center;">TOTAL</td>
+              <td style="text-align:center;">${totalSACAll}</td>
+              <td style="text-align:center;">${totalLOSAll}</td>
+              <td></td><td></td>
+              <td style="text-align:right;">Rp&nbsp;${formatNumberExcel(totalHonorAll)}</td>
+              <td style="border:none;"></td>
+              <td colspan="5" style="border:none;"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const blob = new Blob(['\uFEFF' + fullExcelHtml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `Rekap_payroll_tutor_${startDate}_s_d_${endDate}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function exportPayrollCSV() {
   if (!processedPayrollSummary.length) return alert("Tidak ada data payroll untuk diekspor!");
-  let csv = "data:text/csv;charset=utf-8,\uFEFFNama Tutor,Sesi SAC,Sesi LOS,Subtotal SAC,Subtotal LOS,Total Honor\n";
-  processedPayrollSummary.forEach(item => {
-    csv += `"${item.nama}",${item.countSAC},${item.countLOS},${item.subtotalSAC},${item.subtotalLOS},${item.totalHonor}\n`;
+  const startDate = document.getElementById('start-date').value || 'Awal';
+  const endDate = document.getElementById('end-date').value || 'Akhir';
+
+  let csv = "data:text/csv;charset=utf-8,\uFEFFNo,Nama Tutor,Hadir,SAC,LOS Total,Rincian Sesi Mengajar,Kegiatan,Total Honor,Breakdown Tarif\n";
+  processedPayrollSummary.forEach((item, idx) => {
+    csv += `${idx + 1},"${item.nama}",${item.hadir},${item.countSAC},${item.countLOS},"${item.rincian}","${item.kegiatan}",${item.totalHonor},"${item.breakdownTags.join('; ')}"\n`;
   });
+
   const link = document.createElement("a");
   link.setAttribute("href", encodeURI(csv));
-  link.setAttribute("download", "Payroll_Tutor_Carnation.csv");
+  link.setAttribute("download", `Rekap_payroll_tutor_${startDate}_s_d_${endDate}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -512,12 +673,12 @@ async function fetchSalarySettings() {
 
       if (nama && nama !== 'Nama Karyawan' && isTutorRole) {
         const honorSAC = parseFloat(getCellValue(row, 1)) || 50000;
-        const honorLOSSD = parseFloat(getCellValue(row, 10)) || 0;
-        const honorLOSSMP = parseFloat(getCellValue(row, 11)) || 0;
-        const honorPesantren = parseFloat(getCellValue(row, 13)) || 0;
+        const honorLOSSD = parseFloat(getCellValue(row, 10)) || 97500;
+        const honorLOSSMP = parseFloat(getCellValue(row, 11)) || 107000;
+        const honorPesantren = parseFloat(getCellValue(row, 13)) || 75000;
         const honorHybrid = parseFloat(getCellValue(row, 14)) || 75000;
-        const honorLOSSMADK = parseFloat(getCellValue(row, 15)) || 0;
-        const honorLOSSMALK = parseFloat(getCellValue(row, 16)) || 0;
+        const honorLOSSMADK = parseFloat(getCellValue(row, 15)) || 125000;
+        const honorLOSSMALK = parseFloat(getCellValue(row, 16)) || 137500;
 
         tutorSalarySettings.push({
           nama,
@@ -556,11 +717,11 @@ function useDefaultSalarySettings() {
     nama,
     honorSAC: 50000,
     honorHybrid: 75000,
-    honorLOSSD: 0,
-    honorLOSSMP: 0,
-    honorPesantren: 0,
-    honorLOSSMADK: 0,
-    honorLOSSMALK: 0
+    honorLOSSD: 97500,
+    honorLOSSMP: 107000,
+    honorPesantren: 75000,
+    honorLOSSMADK: 125000,
+    honorLOSSMALK: 137500
   }));
 
   populateTutorDropdown();
@@ -618,7 +779,7 @@ function saveTutorTarif() {
   tutorSalarySettings[idx].honorLOSSMALK = parseFloat(document.getElementById('input-honor-los-sma-lk').value) || 0;
 
   renderTarifTutorTable();
-  processPayrollData(); // Update juga perhitungan Beranda secara langsung
+  processPayrollData();
   alert(`Nominal honor untuk ${tutorSalarySettings[idx].nama} berhasil diperbarui!`);
 }
 
