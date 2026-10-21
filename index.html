@@ -34,9 +34,9 @@
     </div>
   </header>
 
-  <div class="flex flex-1 overflow-hidden">
-    <!-- WordPress Left Sidebar Navigation -->
-    <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 min-h-[calc(100vh-2.5rem)] flex flex-col justify-between select-none">
+  <div class="flex flex-1 relative">
+    <!-- WordPress Left Sidebar Navigation (Statis / Sticky saat scroll) -->
+    <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 h-[calc(100vh-2.5rem)] sticky top-10 flex flex-col justify-between select-none z-20">
       <div>
         <div class="p-4 border-b border-slate-800">
           <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">NAVIGASI UTAMA</p>
@@ -51,7 +51,7 @@
           <!-- Menu Rekap Absensi -->
           <button id="nav-absensi" onclick="switchTab('absensi')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="clipboard-list" class="w-4 h-4"></i>
-            <span>Rekap Absensi</span>
+            <span>Rekap Absensi Tutor</span>
           </button>
         </nav>
       </div>
@@ -63,7 +63,7 @@
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto p-6 sm:p-8">
+    <main class="flex-1 min-w-0 p-6 sm:p-8">
       
       <!-- PAGE 1: BERANDA (PAYROLL TUTOR SAC & LOS) -->
       <section id="page-beranda" class="space-y-6">
@@ -152,12 +152,12 @@
         </div>
       </section>
 
-      <!-- PAGE 2: REKAP ABSENSI (ATTENDANCE + USERS) -->
+      <!-- PAGE 2: REKAP ABSENSI (KHUSUS TUTOR) -->
       <section id="page-absensi" class="space-y-6 hidden">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
           <div>
-            <h1 class="text-2xl font-bold text-[#1d2327]">Rekap Absensi Pegawai & Tutor</h1>
-            <p class="text-xs text-slate-500 mt-1">Data gabungan dari sheet <span class="font-semibold text-slate-700">Attendance</span> dan sheet <span class="font-semibold text-slate-700">Users</span>.</p>
+            <h1 class="text-2xl font-bold text-[#1d2327]">Rekap Absensi Tutor</h1>
+            <p class="text-xs text-slate-500 mt-1">Data presensi khusus pengajar / tutor dari sheet <span class="font-semibold text-slate-700">Attendance</span> & <span class="font-semibold text-slate-700">Users</span>.</p>
           </div>
         </div>
 
@@ -184,7 +184,7 @@
         <!-- Summary Stat Cards Absensi -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-[#2271b1]">
-            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Catatan Absensi</p>
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Presensi Tutor</p>
             <h3 id="stat-absensi-total" class="text-2xl font-bold text-slate-900 mt-1">0 Record</h3>
           </div>
           <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-emerald-600">
@@ -199,7 +199,7 @@
 
         <!-- Table Toolbar -->
         <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-          <input type="text" id="absensi-search" onkeyup="filterAttendanceTable()" placeholder="Cari nama pegawai atau jabatan..." class="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          <input type="text" id="absensi-search" onkeyup="filterAttendanceTable()" placeholder="Cari nama tutor..." class="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
           
           <div class="flex items-center gap-2">
             <button onclick="exportAttendanceExcel()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-3 py-2 rounded text-xs transition">
@@ -217,7 +217,7 @@
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-100 border-b border-slate-300 font-bold uppercase text-slate-600">
-                  <th class="p-3.5">Nama Pegawai / Tutor</th>
+                  <th class="p-3.5">Nama Tutor</th>
                   <th class="p-3.5">Jabatan</th>
                   <th class="p-3.5">Tanggal</th>
                   <th class="p-3.5 text-center">Jam Masuk</th>
@@ -228,7 +228,7 @@
               </thead>
               <tbody id="absensi-table-body" class="divide-y divide-slate-200">
                 <tr>
-                  <td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi...</td>
+                  <td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi tutor...</td>
                 </tr>
               </tbody>
             </table>

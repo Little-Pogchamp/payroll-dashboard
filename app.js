@@ -9,7 +9,7 @@ const URL_ATTENDANCE = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}
 let rawPayrollData = [];
 let processedPayrollSummary = [];
 
-let usersMap = {}; // { id_user: { nama, jabatan } }
+let usersMap = {};
 let rawAttendanceData = [];
 let processedAttendanceSummary = [];
 
@@ -88,7 +88,7 @@ function parseToIsoDate(rawVal, formattedVal) {
   return target;
 }
 
-// Helper untuk Fetch & Parse JSON GViz API
+// Helper Fetch & Parse JSON GViz API
 async function fetchGVizJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -100,7 +100,7 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA (DataForm + Users + Attendance)
+// FETCH ALL DATA
 async function fetchAllData() {
   await fetchPayrollData();
   await fetchAttendanceAndUsers();
@@ -245,12 +245,12 @@ function exportPayrollCSV() {
 }
 
 // ========================================================
-// 2. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
+// 2. PAGE REKAP ABSENSI (ATTENDANCE + USERS - KHUSUS TUTOR)
 // ========================================================
 
 async function fetchAttendanceAndUsers() {
   const tbody = document.getElementById('absensi-table-body');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi & pegawai...</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi tutor...</td></tr>`;
 
   try {
     // A. Fetch Sheet Users
@@ -273,7 +273,7 @@ async function fetchAttendanceAndUsers() {
 
     rawAttendanceData = attRows.map(row => {
       const userId = String(getCellValue(row, 1)).trim();
-      const userObj = usersMap[userId] || { nama: 'Pegawai Tanpa Nama', jabatan: 'Pegawai' };
+      const userObj = usersMap[userId] || { nama: '', jabatan: '' };
 
       const isoDate = parseToIsoDate(getCellValue(row, 2), getCellFormatted(row, 2));
 
@@ -289,7 +289,7 @@ async function fetchAttendanceAndUsers() {
         status: String(getCellValue(row, 9) || 'Hadir').trim(),
         fotoIn: getCellValue(row, 10)
       };
-    }).filter(item => item.nama !== 'Pegawai Tanpa Nama' && item.tanggal !== '');
+    }).filter(item => item.nama !== '' && item.tanggal !== '' && item.jabatan.toLowerCase().includes('tutor'));
 
     processAttendanceData();
 
@@ -324,7 +324,7 @@ function renderAttendanceTable(data) {
   tbody.innerHTML = '';
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Tidak ada record absensi sesuai filter.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Tidak ada record absensi tutor sesuai filter.</td></tr>`;
     return;
   }
 
@@ -378,7 +378,7 @@ function filterAttendanceTable() {
 function exportAttendanceExcel() {
   if (!processedAttendanceSummary.length) return alert("Tidak ada data absensi untuk diekspor!");
   const excelData = processedAttendanceSummary.map(item => ({
-    "Nama Pegawai": item.nama,
+    "Nama Tutor": item.nama,
     "Jabatan": item.jabatan,
     "Tanggal": item.tanggalFmt || item.tanggal,
     "Jam Masuk": item.jamMasuk,
@@ -387,19 +387,19 @@ function exportAttendanceExcel() {
   }));
   const ws = XLSX.utils.json_to_sheet(excelData);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
-  XLSX.writeFile(wb, "Rekap_Absensi_Carnation.xlsx");
+  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi Tutor");
+  XLSX.writeFile(wb, "Rekap_Absensi_Tutor_Carnation.xlsx");
 }
 
 function exportAttendanceCSV() {
   if (!processedAttendanceSummary.length) return alert("Tidak ada data absensi untuk diekspor!");
-  let csv = "data:text/csv;charset=utf-8,\uFEFFNama Pegawai,Jabatan,Tanggal,Jam Masuk,Jam Keluar,Status\n";
+  let csv = "data:text/csv;charset=utf-8,\uFEFFNama Tutor,Jabatan,Tanggal,Jam Masuk,Jam Keluar,Status\n";
   processedAttendanceSummary.forEach(item => {
     csv += `"${item.nama}","${item.jabatan}","${item.tanggalFmt || item.tanggal}","${item.jamMasuk}","${item.jamKeluar}","${item.status}"\n`;
   });
   const link = document.createElement("a");
   link.setAttribute("href", encodeURI(csv));
-  link.setAttribute("download", "Rekap_Absensi_Carnation.csv");
+  link.setAttribute("download", "Rekap_Absensi_Tutor_Carnation.csv");
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -431,7 +431,7 @@ function switchTab(tab) {
     navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
     navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
 
-    pageTitleTop.innerText = "Rekap Absensi Pegawai";
+    pageTitleTop.innerText = "Rekap Absensi Tutor";
   }
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
