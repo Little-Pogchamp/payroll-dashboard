@@ -1,18 +1,24 @@
 // CONFIGURATION
 const SPREADSHEET_ID = '1PkmW4hah19NQjfd__Sz2c3ZGONO4GWDuukVs4ViLGYE';
-const SHEET_NAME = 'DataForm'; 
 
-const GViz_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${SHEET_NAME}`;
+const URL_DATAFORM = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=DataForm`;
+const URL_USERS = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Users`;
+const URL_ATTENDANCE = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance`;
 
+// Global State
+let rawPayrollData = [];
+let processedPayrollSummary = [];
+
+let usersMap = {}; // { id_user: { nama, jabatan } }
 let rawAttendanceData = [];
-let processedTutorSummary = [];
+let processedAttendanceSummary = [];
 
 // Format Angka ke Rupiah
 function formatRupiah(number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number || 0);
 }
 
-// Mapping nama bulan Bahasa Indonesia (termasuk singkatan)
+// Mapping bulan Bahasa Indonesia
 const indonesianMonths = {
   'januari': '01', 'jan': '01',
   'februari': '02', 'feb': '02',
@@ -28,7 +34,7 @@ const indonesianMonths = {
   'desember': '12', 'des': '12'
 };
 
-// Helper membaca cell secara aman (Null-Safe)
+// Helper Null-Safe Cell Reader
 function getCellValue(row, colIndex) {
   if (!row || !row.c || !row.c[colIndex]) return '';
   const cell = row.c[colIndex];
@@ -46,7 +52,6 @@ function parseToIsoDate(rawVal, formattedVal) {
   const rawStr = String(rawVal || '').trim();
   const fmtStr = String(formattedVal || '').trim();
 
-  // 1. Prioritaskan nilai mentah GViz jika bertipe Date(YYYY,M,D)
   if (rawStr.includes('Date(')) {
     const matches = rawStr.match(/\d+/g);
     if (matches && matches.length >= 3) {
@@ -60,19 +65,16 @@ function parseToIsoDate(rawVal, formattedVal) {
   const target = fmtStr || rawStr;
   if (!target) return '';
 
-  // 2. Format ISO YYYY-MM-DD atau YYYY/MM/DD
   const matchIso = target.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
   if (matchIso) {
     return `${matchIso[1]}-${matchIso[2].padStart(2, '0')}-${matchIso[3].padStart(2, '0')}`;
   }
 
-  // 3. Format Angka DD/MM/YYYY atau D/M/YYYY
   const matchNumeric = target.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (matchNumeric) {
     return `${matchNumeric[3]}-${matchNumeric[2].padStart(2, '0')}-${matchNumeric[1].padStart(2, '0')}`;
   }
 
-  // 4. Format Teks Indonesia (contoh: "Senin, 5 Oktober 2026", "Jum'at, 16 Okt 2026", "05-Okt-2026")
   const clean = target.replace(/^(senin|selasa|rabu|kamis|jumat|jum\'at|sabtu|minggu)[,\s]*/i, '').trim();
   const matchText = clean.match(/(\d{1,2})[\s\/\-]+([a-zA-Z]+)[\s\/\-]+(\d{4})/);
   if (matchText) {
@@ -86,83 +88,59 @@ function parseToIsoDate(rawVal, formattedVal) {
   return target;
 }
 
-// Fetch Data dari Google Sheets via GViz API
+// Helper untuk Fetch & Parse JSON GViz API
+async function fetchGVizJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const text = await response.text();
+  const firstOpen = text.indexOf('{');
+  const lastClose = text.lastIndexOf('}');
+  if (firstOpen === -1 || lastClose === -1) throw new Error("Akses ditolak ke Spreadsheet");
+  const jsonString = text.substring(firstOpen, lastClose + 1);
+  return JSON.parse(jsonString);
+}
+
+// FETCH ALL DATA (DataForm + Users + Attendance)
+async function fetchAllData() {
+  await fetchPayrollData();
+  await fetchAttendanceAndUsers();
+}
+
+// ========================================================
+// 1. PAGE BERANDA: PAYROLL TUTOR (DATAFORM)
+// ========================================================
+
 async function fetchPayrollData() {
   const tbody = document.getElementById('payroll-table-body');
-  if (tbody) {
-    tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Memperbarui data absensi dari Google Sheets...</td></tr>`;
-  }
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Memuat data payroll...</td></tr>`;
 
   try {
-    const response = await fetch(GViz_URL);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP Error ${response.status}: Gagal terhubung ke Google Sheets.`);
-    }
+    const data = await fetchGVizJson(URL_DATAFORM);
+    const rows = data.table.rows || [];
 
-    const text = await response.text();
-
-    const firstOpen = text.indexOf('{');
-    const lastClose = text.lastIndexOf('}');
-    
-    if (firstOpen === -1 || lastClose === -1) {
-      throw new Error("Izin akses ditolak. Pastikan Google Sheet dibagikan ke 'Siapa saja yang memiliki link'.");
-    }
-
-    const jsonString = text.substring(firstOpen, lastClose + 1);
-    const data = JSON.parse(jsonString);
-
-    if (!data.table || !data.table.rows) {
-      throw new Error("Struktur data spreadsheet kosong.");
-    }
-
-    const rows = data.table.rows;
-
-    // Mapping Kolom DataForm:
-    // [0]: Tanggal | [1]: Nama Tutor | [2]: Mengajar (SAC/LOS) | [5]: Kelas | [6]: Mapel
-    rawAttendanceData = rows.map(row => {
-      const valTanggal = getCellValue(row, 0);
-      const fmtTanggal = getCellFormatted(row, 0);
-      const isoDate = parseToIsoDate(valTanggal, fmtTanggal);
-
-      const tutorName = String(getCellValue(row, 1)).trim();
-      const kategoriStr = String(getCellValue(row, 2)).trim().toUpperCase();
-
+    rawPayrollData = rows.map(row => {
+      const isoDate = parseToIsoDate(getCellValue(row, 0), getCellFormatted(row, 0));
       return {
         tanggal: isoDate,
-        tutor: tutorName,
-        kategori: kategoriStr,
-        kelas: getCellValue(row, 5),
-        mapel: getCellValue(row, 6)
+        tutor: String(getCellValue(row, 1)).trim(),
+        kategori: String(getCellValue(row, 2)).trim().toUpperCase()
       };
     }).filter(item => item.tutor !== '' && item.tutor !== 'Tanpa Nama' && item.tutor !== 'Nama Tutor');
 
-    processData();
-
-  } catch (error) {
-    console.error('Error fetching data:', error);
-    if (tbody) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="6" class="p-8 text-center text-red-600 font-medium">
-            ⚠️ ${error.message}<br>
-            <span class="text-xs text-slate-500 font-normal mt-1 block">
-              Pastikan Google Sheet di-Share dengan akses "Siapa saja yang memiliki link" sebagai Pelihat (Viewer).
-            </span>
-          </td>
-        </tr>`;
-    }
+    processPayrollData();
+  } catch (err) {
+    console.error("Error Payroll:", err);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-red-600 font-medium">⚠️ Gagal memuat data DataForm: ${err.message}</td></tr>`;
   }
 }
 
-// Filter Berdasarkan Rentang Tanggal & Hitung Sesi Per Tutor
-function processData() {
+function processPayrollData() {
   const startDate = document.getElementById('start-date').value;
   const endDate = document.getElementById('end-date').value;
   const rateSAC = parseFloat(document.getElementById('rate-sac').value) || 0;
   const rateLOS = parseFloat(document.getElementById('rate-los').value) || 0;
 
-  const filteredRows = rawAttendanceData.filter(item => {
+  const filteredRows = rawPayrollData.filter(item => {
     if (!item.tanggal) return true;
     if (startDate && item.tanggal < startDate) return false;
     if (endDate && item.tanggal > endDate) return false;
@@ -170,17 +148,11 @@ function processData() {
   });
 
   const tutorMap = {};
-
   filteredRows.forEach(item => {
     const nama = item.tutor;
     if (!tutorMap[nama]) {
-      tutorMap[nama] = {
-        nama: nama,
-        countSAC: 0,
-        countLOS: 0
-      };
+      tutorMap[nama] = { nama, countSAC: 0, countLOS: 0 };
     }
-
     if (item.kategori.includes('LOS')) {
       tutorMap[nama].countLOS += 1;
     } else {
@@ -188,55 +160,46 @@ function processData() {
     }
   });
 
-  processedTutorSummary = Object.values(tutorMap).map(tutor => {
+  processedPayrollSummary = Object.values(tutorMap).map(tutor => {
     const subtotalSAC = tutor.countSAC * rateSAC;
     const subtotalLOS = tutor.countLOS * rateLOS;
-    return {
-      ...tutor,
-      subtotalSAC,
-      subtotalLOS,
-      totalHonor: subtotalSAC + subtotalLOS
-    };
+    return { ...tutor, subtotalSAC, subtotalLOS, totalHonor: subtotalSAC + subtotalLOS };
   });
 
-  processedTutorSummary.sort((a, b) => a.nama.localeCompare(b.nama));
-
-  renderTable(processedTutorSummary);
-  updateStats(processedTutorSummary);
+  processedPayrollSummary.sort((a, b) => a.nama.localeCompare(b.nama));
+  renderPayrollTable(processedPayrollSummary);
+  updatePayrollStats(processedPayrollSummary);
 }
 
-// Render Tabel
-function renderTable(data) {
+function renderPayrollTable(data) {
   const tbody = document.getElementById('payroll-table-body');
   if (!tbody) return;
-  
   tbody.innerHTML = '';
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Tidak ada data absensi pada rentang tanggal ini.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Tidak ada data payroll pada rentang tanggal ini.</td></tr>`;
     return;
   }
 
   data.forEach(tutor => {
     const tr = document.createElement('tr');
-    tr.className = 'hover:bg-slate-50 transition border-b border-slate-100';
+    tr.className = 'hover:bg-slate-50 transition border-b border-slate-200';
     tr.innerHTML = `
-      <td class="p-4 font-semibold text-slate-900">${tutor.nama}</td>
-      <td class="p-4 text-center font-medium text-slate-700">${tutor.countSAC} Sesi</td>
-      <td class="p-4 text-center font-medium text-slate-700">${tutor.countLOS} Sesi</td>
-      <td class="p-4 text-right text-slate-600">${formatRupiah(tutor.subtotalSAC)}</td>
-      <td class="p-4 text-right text-slate-600">${formatRupiah(tutor.subtotalLOS)}</td>
-      <td class="p-4 text-right font-bold text-indigo-600">${formatRupiah(tutor.totalHonor)}</td>
+      <td class="p-3.5 font-bold text-slate-900">${tutor.nama}</td>
+      <td class="p-3.5 text-center font-medium">${tutor.countSAC} Sesi</td>
+      <td class="p-3.5 text-center font-medium">${tutor.countLOS} Sesi</td>
+      <td class="p-3.5 text-right text-slate-600">${formatRupiah(tutor.subtotalSAC)}</td>
+      <td class="p-3.5 text-right text-slate-600">${formatRupiah(tutor.subtotalLOS)}</td>
+      <td class="p-3.5 text-right font-bold text-[#2271b1]">${formatRupiah(tutor.totalHonor)}</td>
     `;
     tbody.appendChild(tr);
   });
 }
 
-// Update Statistik Ringkasan
-function updateStats(data) {
-  const totalSAC = data.reduce((acc, curr) => acc + curr.countSAC, 0);
-  const totalLOS = data.reduce((acc, curr) => acc + curr.countLOS, 0);
-  const totalHonor = data.reduce((acc, curr) => acc + curr.totalHonor, 0);
+function updatePayrollStats(data) {
+  const totalSAC = data.reduce((a, b) => a + b.countSAC, 0);
+  const totalLOS = data.reduce((a, b) => a + b.countLOS, 0);
+  const totalHonor = data.reduce((a, b) => a + b.totalHonor, 0);
 
   document.getElementById('stat-sac-count').innerText = `${totalSAC} Sesi`;
   document.getElementById('stat-los-count').innerText = `${totalLOS} Sesi`;
@@ -244,26 +207,16 @@ function updateStats(data) {
   document.getElementById('stat-total-honor').innerText = formatRupiah(totalHonor);
 }
 
-// Fitur Filter / Pencarian
-function filterData() {
-  const query = document.getElementById('search-input').value.toLowerCase();
-  const filtered = processedTutorSummary.filter(item => 
-    item.nama.toLowerCase().includes(query)
-  );
-  renderTable(filtered);
+function filterPayrollTable() {
+  const query = document.getElementById('payroll-search').value.toLowerCase();
+  const filtered = processedPayrollSummary.filter(t => t.nama.toLowerCase().includes(query));
+  renderPayrollTable(filtered);
 }
 
-// FUNGSI EKSPOR EXCEL & CSV
-function exportToExcel() {
-  if (!processedTutorSummary || processedTutorSummary.length === 0) {
-    alert("Tidak ada data untuk diekspor!");
-    return;
-  }
-
-  const startDate = document.getElementById('start-date').value || 'Awal';
-  const endDate = document.getElementById('end-date').value || 'Akhir';
-
-  const excelData = processedTutorSummary.map(item => ({
+// Ekspor Payroll
+function exportPayrollExcel() {
+  if (!processedPayrollSummary.length) return alert("Tidak ada data payroll untuk diekspor!");
+  const excelData = processedPayrollSummary.map(item => ({
     "Nama Tutor": item.nama,
     "Sesi SAC": item.countSAC,
     "Sesi LOS": item.countLOS,
@@ -271,54 +224,221 @@ function exportToExcel() {
     "Subtotal LOS (Rp)": item.subtotalLOS,
     "Total Honor (Rp)": item.totalHonor
   }));
-
-  const worksheet = XLSX.utils.json_to_sheet(excelData);
-  worksheet['!cols'] = [
-    { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 20 }, { wch: 22 }
-  ];
-
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Rekap Honor");
-  XLSX.writeFile(workbook, `Rekap_Honor_Tutor_${startDate}_sd_${endDate}.xlsx`);
+  const ws = XLSX.utils.json_to_sheet(excelData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Payroll Tutor");
+  XLSX.writeFile(wb, "Payroll_Tutor_Carnation.xlsx");
 }
 
-function exportToCSV() {
-  if (!processedTutorSummary || processedTutorSummary.length === 0) {
-    alert("Tidak ada data untuk diekspor!");
-    return;
-  }
-
-  const startDate = document.getElementById('start-date').value || 'Awal';
-  const endDate = document.getElementById('end-date').value || 'Akhir';
-
-  let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-  csvContent += "Nama Tutor,Sesi SAC,Sesi LOS,Subtotal SAC (Rp),Subtotal LOS (Rp),Total Honor (Rp)\n";
-
-  processedTutorSummary.forEach(item => {
-    const row = [
-      `"${item.nama}"`,
-      item.countSAC,
-      item.countLOS,
-      item.subtotalSAC,
-      item.subtotalLOS,
-      item.totalHonor
-    ].join(",");
-    csvContent += row + "\n";
+function exportPayrollCSV() {
+  if (!processedPayrollSummary.length) return alert("Tidak ada data payroll untuk diekspor!");
+  let csv = "data:text/csv;charset=utf-8,\uFEFFNama Tutor,Sesi SAC,Sesi LOS,Subtotal SAC,Subtotal LOS,Total Honor\n";
+  processedPayrollSummary.forEach(item => {
+    csv += `"${item.nama}",${item.countSAC},${item.countLOS},${item.subtotalSAC},${item.subtotalLOS},${item.totalHonor}\n`;
   });
-
-  const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `Rekap_Honor_Tutor_${startDate}_sd_${endDate}.csv`);
+  link.setAttribute("href", encodeURI(csv));
+  link.setAttribute("download", "Payroll_Tutor_Carnation.csv");
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
 
-// Inisialisasi Otomatis saat Halaman Dimuat
-window.addEventListener('DOMContentLoaded', () => {
-  if (typeof lucide !== 'undefined') {
-    lucide.createIcons();
+// ========================================================
+// 2. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
+// ========================================================
+
+async function fetchAttendanceAndUsers() {
+  const tbody = document.getElementById('absensi-table-body');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi & pegawai...</td></tr>`;
+
+  try {
+    // A. Fetch Sheet Users
+    const usersData = await fetchGVizJson(URL_USERS);
+    const userRows = usersData.table.rows || [];
+    usersMap = {};
+
+    userRows.forEach(row => {
+      const idUser = String(getCellValue(row, 0)).trim();
+      const namaUser = String(getCellValue(row, 1)).trim();
+      const jabatanUser = String(getCellValue(row, 2)).trim();
+      if (idUser) {
+        usersMap[idUser] = { nama: namaUser, jabatan: jabatanUser };
+      }
+    });
+
+    // B. Fetch Sheet Attendance
+    const attendanceData = await fetchGVizJson(URL_ATTENDANCE);
+    const attRows = attendanceData.table.rows || [];
+
+    rawAttendanceData = attRows.map(row => {
+      const userId = String(getCellValue(row, 1)).trim();
+      const userObj = usersMap[userId] || { nama: 'Pegawai Tanpa Nama', jabatan: 'Pegawai' };
+
+      const isoDate = parseToIsoDate(getCellValue(row, 2), getCellFormatted(row, 2));
+
+      return {
+        id: getCellValue(row, 0),
+        userId: userId,
+        nama: userObj.nama,
+        jabatan: userObj.jabatan,
+        tanggal: isoDate,
+        tanggalFmt: getCellFormatted(row, 2) || getCellValue(row, 2),
+        jamMasuk: getCellValue(row, 3) || '-',
+        jamKeluar: getCellValue(row, 4) || '-',
+        status: String(getCellValue(row, 9) || 'Hadir').trim(),
+        fotoIn: getCellValue(row, 10)
+      };
+    }).filter(item => item.nama !== 'Pegawai Tanpa Nama' && item.tanggal !== '');
+
+    processAttendanceData();
+
+  } catch (err) {
+    console.error("Error Attendance:", err);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-600 font-medium">⚠️ Gagal memuat data Absensi: ${err.message}</td></tr>`;
   }
-  fetchPayrollData();
+}
+
+function processAttendanceData() {
+  const startDate = document.getElementById('absensi-start-date').value;
+  const endDate = document.getElementById('absensi-end-date').value;
+  const statusFilter = document.getElementById('absensi-status-filter').value;
+
+  processedAttendanceSummary = rawAttendanceData.filter(item => {
+    if (startDate && item.tanggal < startDate) return false;
+    if (endDate && item.tanggal > endDate) return false;
+    if (statusFilter !== 'ALL' && item.status.toUpperCase() !== statusFilter) return false;
+    return true;
+  });
+
+  // Urutkan dari tanggal terbaru
+  processedAttendanceSummary.sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+
+  renderAttendanceTable(processedAttendanceSummary);
+  updateAttendanceStats(processedAttendanceSummary);
+}
+
+function renderAttendanceTable(data) {
+  const tbody = document.getElementById('absensi-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Tidak ada record absensi sesuai filter.</td></tr>`;
+    return;
+  }
+
+  data.forEach(item => {
+    const isLate = item.status.toLowerCase() === 'terlambat';
+    const statusBadge = isLate 
+      ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">Terlambat</span>`
+      : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">Hadir</span>`;
+
+    const fotoBtn = item.fotoIn 
+      ? `<a href="${item.fotoIn}" target="_blank" class="text-[#2271b1] hover:underline flex items-center justify-center gap-1"><i data-lucide="image" class="w-3.5 h-3.5"></i> Lihat Foto</a>`
+      : `<span class="text-slate-400">-</span>`;
+
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 transition border-b border-slate-200';
+    tr.innerHTML = `
+      <td class="p-3.5 font-bold text-slate-900">${item.nama}</td>
+      <td class="p-3.5 text-slate-600">${item.jabatan}</td>
+      <td class="p-3.5 font-medium">${item.tanggalFmt || item.tanggal}</td>
+      <td class="p-3.5 text-center font-mono font-semibold">${item.jamMasuk}</td>
+      <td class="p-3.5 text-center font-mono font-semibold">${item.jamKeluar}</td>
+      <td class="p-3.5 text-center">${statusBadge}</td>
+      <td class="p-3.5 text-center">${fotoBtn}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function updateAttendanceStats(data) {
+  const totalRec = data.length;
+  const hadirRec = data.filter(d => d.status.toLowerCase() === 'hadir').length;
+  const lateRec = data.filter(d => d.status.toLowerCase() === 'terlambat').length;
+
+  document.getElementById('stat-absensi-total').innerText = `${totalRec} Record`;
+  document.getElementById('stat-absensi-hadir').innerText = `${hadirRec} Record`;
+  document.getElementById('stat-absensi-terlambat').innerText = `${lateRec} Record`;
+}
+
+function filterAttendanceTable() {
+  const query = document.getElementById('absensi-search').value.toLowerCase();
+  const filtered = processedAttendanceSummary.filter(item => 
+    item.nama.toLowerCase().includes(query) || 
+    item.jabatan.toLowerCase().includes(query)
+  );
+  renderAttendanceTable(filtered);
+}
+
+// Ekspor Absensi
+function exportAttendanceExcel() {
+  if (!processedAttendanceSummary.length) return alert("Tidak ada data absensi untuk diekspor!");
+  const excelData = processedAttendanceSummary.map(item => ({
+    "Nama Pegawai": item.nama,
+    "Jabatan": item.jabatan,
+    "Tanggal": item.tanggalFmt || item.tanggal,
+    "Jam Masuk": item.jamMasuk,
+    "Jam Keluar": item.jamKeluar,
+    "Status": item.status
+  }));
+  const ws = XLSX.utils.json_to_sheet(excelData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
+  XLSX.writeFile(wb, "Rekap_Absensi_Carnation.xlsx");
+}
+
+function exportAttendanceCSV() {
+  if (!processedAttendanceSummary.length) return alert("Tidak ada data absensi untuk diekspor!");
+  let csv = "data:text/csv;charset=utf-8,\uFEFFNama Pegawai,Jabatan,Tanggal,Jam Masuk,Jam Keluar,Status\n";
+  processedAttendanceSummary.forEach(item => {
+    csv += `"${item.nama}","${item.jabatan}","${item.tanggalFmt || item.tanggal}","${item.jamMasuk}","${item.jamKeluar}","${item.status}"\n`;
+  });
+  const link = document.createElement("a");
+  link.setAttribute("href", encodeURI(csv));
+  link.setAttribute("download", "Rekap_Absensi_Carnation.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// ========================================================
+// 3. NAVIGATION TAB SWITCHER
+// ========================================================
+
+function switchTab(tab) {
+  const pageBeranda = document.getElementById('page-beranda');
+  const pageAbsensi = document.getElementById('page-absensi');
+  const navBeranda = document.getElementById('nav-beranda');
+  const navAbsensi = document.getElementById('nav-absensi');
+  const pageTitleTop = document.getElementById('page-title-topbar');
+
+  if (tab === 'beranda') {
+    pageBeranda.classList.remove('hidden');
+    pageAbsensi.classList.add('hidden');
+
+    navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
+    navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
+
+    pageTitleTop.innerText = "Beranda (Payroll Tutor)";
+  } else if (tab === 'absensi') {
+    pageBeranda.classList.add('hidden');
+    pageAbsensi.classList.remove('hidden');
+
+    navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
+    navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
+
+    pageTitleTop.innerText = "Rekap Absensi Pegawai";
+  }
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// INITIALIZATION
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+  fetchAllData();
 });

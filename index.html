@@ -3,114 +3,241 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard Honor Tutor - SAC & LOS</title>
+  <title>WordPress Dashboard - Homeschooling Carnation</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
+  <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- SheetJS CDN (Untuk Ekspor Excel & CSV) -->
+  <!-- SheetJS CDN (Ekspor Excel & CSV) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
+<body class="bg-[#f0f0f1] text-[#2c3338] antialiased min-h-screen font-sans flex flex-col">
 
-  <!-- Header / Navbar -->
-  <header class="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="p-2 bg-indigo-600 text-white rounded-lg">
-          <i data-lucide="calculator"></i>
-        </div>
-        <div>
-          <h1 class="font-bold text-lg sm:text-xl text-slate-900 leading-tight">Payroll Tutor (SAC & LOS)</h1>
-          <p class="text-xs text-slate-500">Homeschooling Carnation</p>
-        </div>
+  <!-- WordPress Top Admin Bar -->
+  <header class="bg-[#1d2327] text-white h-10 flex items-center justify-between px-4 sticky top-0 z-30 shadow-md text-xs select-none">
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 font-bold hover:text-[#2271b1] cursor-pointer transition">
+        <i data-lucide="wordpress" class="w-4 h-4 text-slate-300"></i>
+        <span>Homeschooling Carnation Admin</span>
       </div>
-      <button onclick="fetchPayrollData()" class="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-medium px-4 py-2 rounded-lg transition text-sm">
-        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Sync Data
+      <span class="text-slate-500">|</span>
+      <span id="page-title-topbar" class="text-slate-300 font-medium">Beranda Dashboard</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <button onclick="fetchAllData()" class="flex items-center gap-1.5 bg-[#2271b1] hover:bg-[#135e96] text-white px-2.5 py-1 rounded text-xs transition">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Data
       </button>
+      <div class="flex items-center gap-2 border-l border-slate-700 pl-4">
+        <div class="w-5 h-5 rounded-full bg-slate-600 flex items-center justify-center font-bold text-[10px]">A</div>
+        <span class="text-slate-300 hidden sm:inline">Halo, Admin</span>
+      </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    
-    <!-- Filter Rentang Tanggal & Pengaturan Tarif -->
-    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+  <div class="flex flex-1 overflow-hidden">
+    <!-- WordPress Left Sidebar Navigation -->
+    <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 min-h-[calc(100vh-2.5rem)] flex flex-col justify-between select-none">
       <div>
-        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Tanggal Mulai</label>
-        <input type="date" id="start-date" onchange="processData()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+        <div class="p-4 border-b border-slate-800">
+          <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">NAVIGASI UTAMA</p>
+        </div>
+        <nav class="mt-2 space-y-1 px-2">
+          <!-- Menu Beranda -->
+          <button id="nav-beranda" onclick="switchTab('beranda')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition">
+            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+            <span>Beranda (Payroll)</span>
+          </button>
+          
+          <!-- Menu Rekap Absensi -->
+          <button id="nav-absensi" onclick="switchTab('absensi')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
+            <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+            <span>Rekap Absensi</span>
+          </button>
+        </nav>
       </div>
-      <div>
-        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Tanggal Selesai</label>
-        <input type="date" id="end-date" onchange="processData()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Tarif SAC / Sesi (Rp)</label>
-        <input type="number" id="rate-sac" value="35000" step="1000" oninput="processData()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold uppercase text-slate-500 mb-1">Tarif LOS / Sesi (Rp)</label>
-        <input type="number" id="rate-los" value="45000" step="1000" oninput="processData()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-      </div>
-    </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Sesi SAC</p>
-        <h3 id="stat-sac-count" class="text-3xl font-bold text-slate-900 mt-2">0 Sesi</h3>
+      <div class="p-4 border-t border-slate-800 text-[11px] text-slate-500">
+        <p>WordPress v6.4 Custom</p>
+        <p class="text-[10px] text-slate-600">Spreadsheet Auto-Sync</p>
       </div>
-      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Sesi LOS</p>
-        <h3 id="stat-los-count" class="text-3xl font-bold text-slate-900 mt-2">0 Sesi</h3>
-      </div>
-      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Tutor Aktif</p>
-        <h3 id="stat-tutor-count" class="text-3xl font-bold text-indigo-600 mt-2">0 Orang</h3>
-      </div>
-      <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Honor Dikeluarkan</p>
-        <h3 id="stat-total-honor" class="text-3xl font-bold text-emerald-600 mt-2">Rp 0</h3>
-      </div>
-    </div>
+    </aside>
 
-    <!-- Controls, Search & Export Buttons -->
-    <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-6">
-      <input type="text" id="search-input" onkeyup="filterData()" placeholder="Cari nama tutor..." class="w-full sm:w-80 px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+    <!-- Main Content Area -->
+    <main class="flex-1 overflow-y-auto p-6 sm:p-8">
       
-      <!-- Tombol Ekspor -->
-      <div class="flex items-center gap-2">
-        <button onclick="exportToExcel()" class="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition shadow-sm">
-          <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Ekspor Excel (.xlsx)
-        </button>
-        <button onclick="exportToCSV()" class="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-800 text-white font-medium px-4 py-2 rounded-lg text-sm transition shadow-sm">
-          <i data-lucide="file-text" class="w-4 h-4"></i> Ekspor CSV
-        </button>
-      </div>
-    </div>
+      <!-- PAGE 1: BERANDA (PAYROLL TUTOR SAC & LOS) -->
+      <section id="page-beranda" class="space-y-6">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
+          <div>
+            <h1 class="text-2xl font-bold text-[#1d2327]">Beranda — Payroll & Honor Tutor</h1>
+            <p class="text-xs text-slate-500 mt-1">Perhitungan otomatis Honor SAC & LOS berbasis rentang tanggal dari tab <span class="font-semibold text-slate-700">DataForm</span>.</p>
+          </div>
+        </div>
 
-    <!-- Data Table -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-100/70 border-b border-slate-200 text-xs font-semibold uppercase text-slate-500">
-              <th class="p-4">Nama Tutor</th>
-              <th class="p-4 text-center">Sesi SAC</th>
-              <th class="p-4 text-center">Sesi LOS</th>
-              <th class="p-4 text-right">Subtotal SAC</th>
-              <th class="p-4 text-right">Subtotal LOS</th>
-              <th class="p-4 text-right">Total Honor Diterima</th>
-            </tr>
-          </thead>
-          <tbody id="payroll-table-body" class="divide-y divide-slate-100 text-sm">
-            <tr>
-              <td colspan="6" class="p-8 text-center text-slate-400">Memuat data absensi dari Google Sheets...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </main>
+        <!-- Filter & Parameter -->
+        <div class="bg-white p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Mulai</label>
+            <input type="date" id="start-date" onchange="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Selesai</label>
+            <input type="date" id="end-date" onchange="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tarif SAC / Sesi (Rp)</label>
+            <input type="number" id="rate-sac" value="35000" step="1000" oninput="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tarif LOS / Sesi (Rp)</label>
+            <input type="number" id="rate-los" value="45000" step="1000" oninput="processPayrollData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+        </div>
+
+        <!-- Summary Stat Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-[#2271b1]">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi SAC</p>
+            <h3 id="stat-sac-count" class="text-2xl font-bold text-slate-900 mt-1">0 Sesi</h3>
+          </div>
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-sky-500">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Sesi LOS</p>
+            <h3 id="stat-los-count" class="text-2xl font-bold text-slate-900 mt-1">0 Sesi</h3>
+          </div>
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-purple-600">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tutor Aktif</p>
+            <h3 id="stat-tutor-count" class="text-2xl font-bold text-purple-700 mt-1">0 Orang</h3>
+          </div>
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-emerald-600">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Honor Dikeluarkan</p>
+            <h3 id="stat-total-honor" class="text-2xl font-bold text-emerald-700 mt-1">Rp 0</h3>
+          </div>
+        </div>
+
+        <!-- Table Toolbar -->
+        <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+          <input type="text" id="payroll-search" onkeyup="filterPayrollTable()" placeholder="Cari nama tutor..." class="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          
+          <div class="flex items-center gap-2">
+            <button onclick="exportPayrollExcel()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-3 py-2 rounded text-xs transition">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Ekspor Excel
+            </button>
+            <button onclick="exportPayrollCSV()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white font-medium px-3 py-2 rounded text-xs transition">
+              <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Ekspor CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Payroll Data Table -->
+        <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-100 border-b border-slate-300 font-bold uppercase text-slate-600">
+                  <th class="p-3.5">Nama Tutor</th>
+                  <th class="p-3.5 text-center">Sesi SAC</th>
+                  <th class="p-3.5 text-center">Sesi LOS</th>
+                  <th class="p-3.5 text-right">Subtotal SAC</th>
+                  <th class="p-3.5 text-right">Subtotal LOS</th>
+                  <th class="p-3.5 text-right">Total Honor Diterima</th>
+                </tr>
+              </thead>
+              <tbody id="payroll-table-body" class="divide-y divide-slate-200">
+                <tr>
+                  <td colspan="6" class="p-8 text-center text-slate-400">Memuat data payroll...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- PAGE 2: REKAP ABSENSI (ATTENDANCE + USERS) -->
+      <section id="page-absensi" class="space-y-6 hidden">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
+          <div>
+            <h1 class="text-2xl font-bold text-[#1d2327]">Rekap Absensi Pegawai & Tutor</h1>
+            <p class="text-xs text-slate-500 mt-1">Data gabungan dari sheet <span class="font-semibold text-slate-700">Attendance</span> dan sheet <span class="font-semibold text-slate-700">Users</span>.</p>
+          </div>
+        </div>
+
+        <!-- Filter Absensi -->
+        <div class="bg-white p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Mulai</label>
+            <input type="date" id="absensi-start-date" onchange="processAttendanceData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Selesai</label>
+            <input type="date" id="absensi-end-date" onchange="processAttendanceData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Status Kehadiran</label>
+            <select id="absensi-status-filter" onchange="processAttendanceData()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+              <option value="ALL">Semua Status</option>
+              <option value="HADIR">Hadir</option>
+              <option value="TERLAMBAT">Terlambat</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Summary Stat Cards Absensi -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-[#2271b1]">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Catatan Absensi</p>
+            <h3 id="stat-absensi-total" class="text-2xl font-bold text-slate-900 mt-1">0 Record</h3>
+          </div>
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-emerald-600">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Hadir Tepat Waktu</p>
+            <h3 id="stat-absensi-hadir" class="text-2xl font-bold text-emerald-700 mt-1">0 Record</h3>
+          </div>
+          <div class="bg-white p-5 rounded border border-slate-300 shadow-sm border-l-4 border-l-amber-500">
+            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Terlambat</p>
+            <h3 id="stat-absensi-terlambat" class="text-2xl font-bold text-amber-600 mt-1">0 Record</h3>
+          </div>
+        </div>
+
+        <!-- Table Toolbar -->
+        <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+          <input type="text" id="absensi-search" onkeyup="filterAttendanceTable()" placeholder="Cari nama pegawai atau jabatan..." class="w-full sm:w-72 px-3 py-2 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          
+          <div class="flex items-center gap-2">
+            <button onclick="exportAttendanceExcel()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-3 py-2 rounded text-xs transition">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Ekspor Excel
+            </button>
+            <button onclick="exportAttendanceCSV()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white font-medium px-3 py-2 rounded text-xs transition">
+              <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Ekspor CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Attendance Data Table -->
+        <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-100 border-b border-slate-300 font-bold uppercase text-slate-600">
+                  <th class="p-3.5">Nama Pegawai / Tutor</th>
+                  <th class="p-3.5">Jabatan</th>
+                  <th class="p-3.5">Tanggal</th>
+                  <th class="p-3.5 text-center">Jam Masuk</th>
+                  <th class="p-3.5 text-center">Jam Keluar</th>
+                  <th class="p-3.5 text-center">Status</th>
+                  <th class="p-3.5 text-center">Foto Presensi</th>
+                </tr>
+              </thead>
+              <tbody id="absensi-table-body" class="divide-y divide-slate-200">
+                <tr>
+                  <td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
 
   <script src="app.js"></script>
 </body>
