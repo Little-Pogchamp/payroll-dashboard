@@ -179,8 +179,15 @@ function calculateSessionInfo(tutorName, category, kelas) {
   let labelTag = 'SAC';
   let detailClass = kls || 'Umum';
 
+  // Deteksi khusus Hybrid Zahra -> Wajib dihitung sebagai SAC dengan honor SAC tutor
+  const isHybridZahra = (cat.includes('HYBRID') || kls.includes('HYBRID')) && (cat.includes('ZAHRA') || kls.includes('ZAHRA'));
+
   if (tutorSetting) {
-    if (cat.includes('ARIANNA') || kls.includes('ARIANNA')) {
+    if (isHybridZahra) {
+      rate = tutorSetting.honorSAC || 50000;
+      labelTag = 'SAC';
+      detailClass = kls || 'Hybrid Zahra';
+    } else if (cat.includes('ARIANNA') || kls.includes('ARIANNA')) {
       rate = tutorSetting.honorHybrid || tutorSetting.honorSAC || 75000;
       labelTag = 'Hybrid Arianna';
     } else if (cat.includes('PESANTREN') || kls.includes('PESANTREN')) {
@@ -203,7 +210,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
       }
       labelTag = 'LOS SMA';
       detailClass = kls && !kls.includes('LOS') ? `SMA (${kls})` : 'SMA (Fadil)';
-    } else if (cat.includes('ZAHRA') || kls.includes('ZAHRA') || cat.includes('LOS')) {
+    } else if (cat.includes('LOS')) {
       rate = tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 97500;
       labelTag = 'LOS SD/General';
       detailClass = kls && !kls.includes('LOS') ? `LOS (${kls})` : 'LOS';
@@ -228,7 +235,7 @@ async function fetchPayrollData() {
     const data = await fetchGVizJson(URL_DATAFORM);
     const rows = data.table.rows || [];
 
-    // 1. Kumpulkan DataForm dengan ID Unik
+    // 1. Kumpulkan DataForm dengan ID Unik & Anti Double Submit
     const dataFormItems = [];
     const seenKeys = new Set();
 
@@ -263,17 +270,16 @@ async function fetchPayrollData() {
       }
     });
 
-    // 2. Kumpulkan Presensi LOS dari Attendance
+    // 2. Kumpulkan Presensi Murni LOS dari Attendance (Abaikan jika Hybrid Zahra)
     const attendanceLosItems = [];
     rawAttendanceData.forEach((att, attIdx) => {
       const textUpper = (att.keterangan || '').toUpperCase();
-      const isLOS = textUpper.includes('LOS') || textUpper.includes('ZAHRA') || textUpper.includes('HYBRID');
+      const isHybridZahra = textUpper.includes('HYBRID') && textUpper.includes('ZAHRA');
+      const isLOS = !isHybridZahra && (textUpper.includes('LOS') || textUpper.includes('PESANTREN'));
 
       if (isLOS && att.nama) {
         let categoryStr = 'LOS';
-        if (textUpper.includes('HYBRID ZAHRA') || textUpper.includes('ZAHRA')) {
-          categoryStr = 'HYBRID ZAHRA';
-        } else if (textUpper.includes('LOS SD') || textUpper.includes('SD')) {
+        if (textUpper.includes('LOS SD') || textUpper.includes('SD')) {
           categoryStr = 'LOS SD';
         } else if (textUpper.includes('LOS SMP') || textUpper.includes('SMP')) {
           categoryStr = 'LOS SMP';
@@ -307,7 +313,7 @@ async function fetchPayrollData() {
       const isDuplicate = dataFormItems.some(dfItem => 
         cleanName(dfItem.tutor) === cleanName(attItem.tutor) &&
         dfItem.tanggal === attItem.tanggal &&
-        (dfItem.kategori.includes('LOS') || dfItem.kategori.includes('ZAHRA'))
+        dfItem.kategori.includes('LOS')
       );
       if (!isDuplicate) {
         combined.push(attItem);
@@ -364,10 +370,14 @@ function processPayrollData() {
     const info = calculateSessionInfo(nama, item.kategori, item.kelas);
     tutorMap[nama].totalHonor += info.rate;
 
-    const isLOS = item.kategori.includes('LOS') || 
-                  item.kategori.includes('ZAHRA') || 
-                  item.kelas.toUpperCase().includes('ZAHRA') ||
-                  item.kategori.includes('HYBRID ZAHRA');
+    const catUpper = (item.kategori || '').toUpperCase();
+    const klsUpper = (item.kelas || '').toUpperCase();
+
+    // Pastikan Hybrid Zahra BUKAN LOS (dihitung sebagai SAC)
+    const isHybridZahra = (catUpper.includes('HYBRID') || klsUpper.includes('HYBRID')) && 
+                          (catUpper.includes('ZAHRA') || klsUpper.includes('ZAHRA'));
+
+    const isLOS = !isHybridZahra && (catUpper.includes('LOS') || klsUpper.includes('LOS'));
 
     if (isLOS) {
       tutorMap[nama].countLOS += 1;
@@ -595,7 +605,7 @@ function exportPayrollCSV() {
 }
 
 // ========================================================
-// 2. PAGE BARU: KELOLA / HAPUS SESI TUTOR (ADJUSTMENT)
+// 2. PAGE KELOLA / HAPUS SESI TUTOR
 // ========================================================
 
 function populateKelolaDropdowns() {
@@ -642,7 +652,14 @@ function renderKelolaSesiPage() {
     matchedSessions.forEach((s, idx) => {
       const isDeleted = excludedIds.has(s.id) || excludedIds.has(s.dedupKey);
 
-      const isLOS = s.kategori.includes('LOS') || s.kategori.includes('ZAHRA');
+      const catUpper = s.kategori.toUpperCase();
+      const klsUpper = s.kelas.toUpperCase();
+
+      const isHybridZahra = (catUpper.includes('HYBRID') || klsUpper.includes('HYBRID')) && 
+                            (catUpper.includes('ZAHRA') || klsUpper.includes('ZAHRA'));
+
+      const isLOS = !isHybridZahra && (catUpper.includes('LOS') || klsUpper.includes('LOS'));
+
       const badgeKat = isLOS
         ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">LOS</span>`
         : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">SAC</span>`;
