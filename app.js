@@ -12,7 +12,7 @@ function formatRupiah(number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number || 0);
 }
 
-// Mapping nama bulan Bahasa Indonesia
+// Mapping nama bulan Bahasa Indonesia (termasuk singkatan)
 const indonesianMonths = {
   'januari': '01', 'jan': '01',
   'februari': '02', 'feb': '02',
@@ -21,10 +21,10 @@ const indonesianMonths = {
   'mei': '05',
   'juni': '06', 'jun': '06',
   'juli': '07', 'jul': '07',
-  'agustus': '08', 'ags': '08', 'agu': '08',
-  'september': '09', 'sep': '09',
+  'agustus': '08', 'ags': '08', 'agu': '08', 'agt': '08',
+  'september': '09', 'sep': '09', 'sept': '09',
   'oktober': '10', 'okt': '10',
-  'november': '11', 'nov': '11',
+  'november': '11', 'nov': '11', 'nopember': '11', 'nop': '11',
   'desember': '12', 'des': '12'
 };
 
@@ -41,14 +41,14 @@ function getCellFormatted(row, colIndex) {
   return cell.f || (cell.v !== null && cell.v !== undefined ? String(cell.v) : '');
 }
 
-// Konversi DD/MM/YYYY, Date(Y,M,D), atau "Senin, 5 Oktober 2026" ke YYYY-MM-DD
+// Konversi Multi-Format Tanggal ke YYYY-MM-DD
 function parseToIsoDate(rawVal, formattedVal) {
-  let strVal = String(formattedVal || rawVal || '').trim();
-  if (!strVal) return '';
+  const rawStr = String(rawVal || '').trim();
+  const fmtStr = String(formattedVal || '').trim();
 
-  // 1. Format GViz Date(YYYY,M,D)
-  if (strVal.includes('Date(')) {
-    const matches = strVal.match(/\d+/g);
+  // 1. Prioritaskan nilai mentah GViz jika bertipe Date(YYYY,M,D)
+  if (rawStr.includes('Date(')) {
+    const matches = rawStr.match(/\d+/g);
     if (matches && matches.length >= 3) {
       const y = matches[0];
       const m = String(Number(matches[1]) + 1).padStart(2, '0');
@@ -57,38 +57,33 @@ function parseToIsoDate(rawVal, formattedVal) {
     }
   }
 
-  // 2. Format Angka DD/MM/YYYY
-  if (strVal.includes('/')) {
-    const parts = strVal.split('/');
-    if (parts.length === 3) {
-      const d = parts[0].padStart(2, '0');
-      const m = parts[1].padStart(2, '0');
-      const y = parts[2].trim();
-      return `${y}-${m}-${d}`;
-    }
+  const target = fmtStr || rawStr;
+  if (!target) return '';
+
+  // 2. Format ISO YYYY-MM-DD atau YYYY/MM/DD
+  const matchIso = target.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (matchIso) {
+    return `${matchIso[1]}-${matchIso[2].padStart(2, '0')}-${matchIso[3].padStart(2, '0')}`;
   }
 
-  // 3. Format ISO YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
-    return strVal;
+  // 3. Format Angka DD/MM/YYYY atau D/M/YYYY
+  const matchNumeric = target.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (matchNumeric) {
+    return `${matchNumeric[3]}-${matchNumeric[2].padStart(2, '0')}-${matchNumeric[1].padStart(2, '0')}`;
   }
 
-  // 4. Format Teks Indonesia (contoh: "Senin, 5 Oktober 2026" atau "5 Oktober 2026")
-  let cleanStr = strVal.replace(/^(senin|selasa|rabu|kamis|jumat|sabtu|minggu)[,\s]*/i, '').trim();
-  const parts = cleanStr.split(/\s+/);
-  
-  if (parts.length >= 3) {
-    const day = parts[0].padStart(2, '0');
-    const monthStr = parts[1].toLowerCase();
-    const year = parts[2];
+  // 4. Format Teks Indonesia (contoh: "Senin, 5 Oktober 2026", "Jum'at, 16 Okt 2026", "05-Okt-2026")
+  const clean = target.replace(/^(senin|selasa|rabu|kamis|jumat|jum\'at|sabtu|minggu)[,\s]*/i, '').trim();
+  const matchText = clean.match(/(\d{1,2})[\s\/\-]+([a-zA-Z]+)[\s\/\-]+(\d{4})/);
+  if (matchText) {
+    const day = matchText[1].padStart(2, '0');
+    const monthStr = matchText[2].toLowerCase();
+    const year = matchText[3];
     const month = indonesianMonths[monthStr] || '01';
-    
-    if (!isNaN(day) && !isNaN(year)) {
-      return `${year}-${month}-${day}`;
-    }
+    return `${year}-${month}-${day}`;
   }
 
-  return strVal;
+  return target;
 }
 
 // Fetch Data dari Google Sheets via GViz API
