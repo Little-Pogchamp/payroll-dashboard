@@ -14,7 +14,7 @@ let usersMap = {};
 let rawAttendanceData = [];
 let processedAttendanceSummary = [];
 
-let tutorSalarySettings = []; // Data tarif honor per tutor
+let tutorSalarySettings = []; // Data tarif honor per tutor (khusus role Tutor)
 
 // Master List Honor Kegiatan (Sesuai Gambar Acuan Fisik)
 const daftarHonorKegiatanMaster = [
@@ -124,10 +124,10 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA
+// FETCH ALL DATA (Urutan: Users -> Payroll -> SalarySettings)
 async function fetchAllData() {
-  await fetchPayrollData();
   await fetchAttendanceAndUsers();
+  await fetchPayrollData();
   await fetchSalarySettings();
 }
 
@@ -148,7 +148,8 @@ async function fetchPayrollData() {
       return {
         tanggal: isoDate,
         tutor: String(getCellValue(row, 1)).trim(),
-        kategori: String(getCellValue(row, 2)).trim().toUpperCase()
+        kategori: String(getCellValue(row, 2)).trim().toUpperCase(),
+        kelas: String(getCellValue(row, 5)).trim().toUpperCase()
       };
     }).filter(item => item.tutor !== '' && item.tutor !== 'Tanpa Nama' && item.tutor !== 'Nama Tutor');
 
@@ -178,7 +179,14 @@ function processPayrollData() {
     if (!tutorMap[nama]) {
       tutorMap[nama] = { nama, countSAC: 0, countLOS: 0 };
     }
-    if (item.kategori.includes('LOS')) {
+
+    // RULE: Jika Kategori/Kelas bernilai 'LOS' ATAU mengandung 'HYBRID ZAHRA' / 'ZAHRA' -> Terhitung LOS
+    const isLOS = item.kategori.includes('LOS') || 
+                  item.kategori.includes('ZAHRA') || 
+                  item.kelas.includes('ZAHRA') ||
+                  item.kategori.includes('HYBRID ZAHRA');
+
+    if (isLOS) {
       tutorMap[nama].countLOS += 1;
     } else {
       tutorMap[nama].countSAC += 1;
@@ -427,7 +435,7 @@ function exportAttendanceCSV() {
 }
 
 // ========================================================
-// 3. PAGE TARIF HONOR TUTOR (INPUT NOMINAL & REKAP 2026/2027)
+// 3. PAGE TARIF HONOR TUTOR (INPUT NOMINAL & REKAP KHUSUS ROLE TUTOR)
 // ========================================================
 
 async function fetchSalarySettings() {
@@ -438,21 +446,33 @@ async function fetchSalarySettings() {
     const data = await fetchGVizJson(URL_SALARYSETTINGS);
     const rows = data.table.rows || [];
 
-    // Filter khusus tutor dari SalarySettings
+    // Kumpulkan Set Nama Pegawai yang Berjabatan Tutor dari usersMap
+    const tutorNamesFromUsers = new Set(
+      Object.values(usersMap)
+        .filter(u => u.jabatan && u.jabatan.toLowerCase().includes('tutor'))
+        .map(u => u.nama.trim().toLowerCase())
+    );
+
     tutorSalarySettings = [];
 
     rows.forEach(row => {
       const nama = String(getCellValue(row, 0)).trim();
-      // Mengambil kolom sesuai sheet SalarySettings
-      const honorSAC = parseFloat(getCellValue(row, 1)) || 50000;
-      const honorLOSSD = parseFloat(getCellValue(row, 10)) || 0;
-      const honorLOSSMP = parseFloat(getCellValue(row, 11)) || 0;
-      const honorPesantren = parseFloat(getCellValue(row, 13)) || 0;
-      const honorHybrid = parseFloat(getCellValue(row, 14)) || 75000;
-      const honorLOSSMADK = parseFloat(getCellValue(row, 15)) || 0;
-      const honorLOSSMALK = parseFloat(getCellValue(row, 16)) || 0;
+      const namaLower = nama.toLowerCase();
 
-      if (nama && nama !== 'Nama Karyawan' && nama !== 'Admin') {
+      // Cek apakah nama ini termasuk dalam daftar Tutor di sheet Users / berjabatan Tutor
+      const isTutorRole = tutorNamesFromUsers.size === 0 
+        ? (!namaLower.includes('admin') && !namaLower.includes('office') && !namaLower.includes('direktur'))
+        : tutorNamesFromUsers.has(namaLower);
+
+      if (nama && nama !== 'Nama Karyawan' && isTutorRole) {
+        const honorSAC = parseFloat(getCellValue(row, 1)) || 50000;
+        const honorLOSSD = parseFloat(getCellValue(row, 10)) || 0;
+        const honorLOSSMP = parseFloat(getCellValue(row, 11)) || 0;
+        const honorPesantren = parseFloat(getCellValue(row, 13)) || 0;
+        const honorHybrid = parseFloat(getCellValue(row, 14)) || 75000;
+        const honorLOSSMADK = parseFloat(getCellValue(row, 15)) || 0;
+        const honorLOSSMALK = parseFloat(getCellValue(row, 16)) || 0;
+
         tutorSalarySettings.push({
           nama,
           honorSAC,
@@ -466,19 +486,20 @@ async function fetchSalarySettings() {
       }
     });
 
+    tutorSalarySettings.sort((a, b) => a.nama.localeCompare(b.nama));
+
     populateTutorDropdown();
     renderTarifTutorTable();
     renderKegiatanTable();
 
   } catch (err) {
     console.error("Error SalarySettings:", err);
-    // Fallback default jika sheet SalarySettings belum terisi penuh
     useDefaultSalarySettings();
   }
 }
 
 function useDefaultSalarySettings() {
-  // Nilai default awal jika data jaringan belum siap
+  // Fallback Tutor Master List
   const defaultTutors = [
     "ANNE NURMELIYANTI, S.Pd", "SUHAYATI, S.Sos", "AGUSTINA PRAJAWATI", "FADIL MUHAMMAD, S.Pd",
     "INDRA LESMANA, S.Pd", "LIA LIANTINA, S.Farm", "SHIFA AWIYAH", "YENI MAULIDAH",
@@ -543,7 +564,6 @@ function saveTutorTarif() {
     return;
   }
 
-  // Update objek di state
   tutorSalarySettings[idx].honorSAC = parseFloat(document.getElementById('input-honor-sac').value) || 0;
   tutorSalarySettings[idx].honorHybrid = parseFloat(document.getElementById('input-honor-hybrid').value) || 0;
   tutorSalarySettings[idx].honorLOSSD = parseFloat(document.getElementById('input-honor-los-sd').value) || 0;
@@ -627,7 +647,6 @@ function switchTab(tab) {
 
   const pageTitleTop = document.getElementById('page-title-topbar');
 
-  // Reset visibilitas
   pageBeranda.classList.add('hidden');
   pageAbsensi.classList.add('hidden');
   pageTarif.classList.add('hidden');
