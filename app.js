@@ -14,7 +14,7 @@ let usersMap = {};
 let rawAttendanceData = [];
 let processedAttendanceSummary = [];
 
-let tutorSalarySettings = []; // Data tarif honor per tutor (khusus role Tutor)
+let tutorSalarySettings = []; // Data tarif honor per tutor
 
 // Master List Honor Kegiatan
 const daftarHonorKegiatanMaster = [
@@ -33,6 +33,17 @@ const daftarHonorKegiatanMaster = [
   { no: 13, kegiatan: "HONOR PEMBAGIAN RAPORT WALIKELAS", honor: 300000 },
   { no: 14, kegiatan: "HONOR WEEKLY REPORT (PERLEMBAR)", honor: 3750 }
 ];
+
+// Helper Pembersih Nama (Menghapus Gelar untuk Pencocokan Akurat)
+function cleanName(name) {
+  if (!name) return '';
+  return String(name)
+    .replace(/,\s*(S\.Pd|S\.Sos|S\.Farm|S\.T|S\.E|M\.Pd|S\.Kom|S\.Ag)\.?/gi, '')
+    .replace(/\b(S\.Pd|S\.Sos|S\.Farm|S\.T|S\.E|M\.Pd|S\.Kom|S\.Ag)\.?\b/gi, '')
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .trim()
+    .toLowerCase();
+}
 
 // Format Angka ke Rupiah Formatted
 function formatRupiah(number) {
@@ -94,12 +105,12 @@ function parseToIsoDate(rawVal, formattedVal) {
   const target = fmtStr || rawStr;
   if (!target) return '';
 
-  const matchIso = target.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  const matchIso = target.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
   if (matchIso) {
     return `${matchIso[1]}-${matchIso[2].padStart(2, '0')}-${matchIso[3].padStart(2, '0')}`;
   }
 
-  const matchNumeric = target.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  const matchNumeric = target.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (matchNumeric) {
     return `${matchNumeric[3]}-${matchNumeric[2].padStart(2, '0')}-${matchNumeric[1].padStart(2, '0')}`;
   }
@@ -114,7 +125,7 @@ function parseToIsoDate(rawVal, formattedVal) {
     return `${year}-${month}-${day}`;
   }
 
-  return target;
+  return target.substring(0, 10);
 }
 
 // Helper Fetch & Parse JSON GViz API
@@ -129,7 +140,7 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA (Urutan: Attendance & Users -> SalarySettings -> Payroll)
+// FETCH ALL DATA
 async function fetchAllData() {
   await fetchAttendanceAndUsers();
   await fetchSalarySettings();
@@ -138,8 +149,8 @@ async function fetchAllData() {
 
 // Helper Deteksi Tarif & Label Per Sesi
 function calculateSessionInfo(tutorName, category, kelas) {
-  const nameClean = tutorName.trim().toLowerCase();
-  const tutorSetting = tutorSalarySettings.find(t => t.nama.trim().toLowerCase() === nameClean);
+  const targetClean = cleanName(tutorName);
+  const tutorSetting = tutorSalarySettings.find(t => cleanName(t.nama) === targetClean);
 
   const cat = (category || '').toUpperCase();
   const kls = (kelas || '').toUpperCase();
@@ -159,11 +170,11 @@ function calculateSessionInfo(tutorName, category, kelas) {
     } else if (cat.includes('LOS SD') || kls.includes('LOS SD') || (kls.includes('SD') && cat.includes('LOS'))) {
       rate = tutorSetting.honorLOSSD || 97500;
       labelTag = 'LOS SD';
-      detailClass = kls ? `SD (${kls})` : 'SD (Gendis/Aydin)';
+      detailClass = kls && !kls.includes('LOS') ? `SD (${kls})` : 'SD (Gendis/Aydin)';
     } else if (cat.includes('LOS SMP') || kls.includes('LOS SMP') || (kls.includes('SMP') && cat.includes('LOS'))) {
       rate = tutorSetting.honorLOSSMP || 107000;
       labelTag = 'LOS SMP';
-      detailClass = kls ? `SMP (${kls})` : 'SMP (Kenzie)';
+      detailClass = kls && !kls.includes('LOS') ? `SMP (${kls})` : 'SMP (Kenzie)';
     } else if (cat.includes('LOS SMA') || kls.includes('LOS SMA') || (kls.includes('SMA') && cat.includes('LOS'))) {
       if (cat.includes('LUAR') || kls.includes('LUAR')) {
         rate = tutorSetting.honorLOSSMALK || 137500;
@@ -171,11 +182,11 @@ function calculateSessionInfo(tutorName, category, kelas) {
         rate = tutorSetting.honorLOSSMADK || 125000;
       }
       labelTag = 'LOS SMA';
-      detailClass = kls ? `SMA (${kls})` : 'SMA (Fadil)';
+      detailClass = kls && !kls.includes('LOS') ? `SMA (${kls})` : 'SMA (Fadil)';
     } else if (cat.includes('ZAHRA') || kls.includes('ZAHRA') || cat.includes('LOS')) {
       rate = tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 97500;
       labelTag = 'LOS SD/General';
-      detailClass = kls ? `LOS (${kls})` : 'LOS';
+      detailClass = kls && !kls.includes('LOS') ? `LOS (${kls})` : 'LOS';
     } else {
       rate = tutorSetting.honorSAC || 50000;
       labelTag = 'SAC';
@@ -212,20 +223,20 @@ async function fetchPayrollData() {
     // 2. Ambil presensi LOS dari sheet Attendance
     const attendanceLosItems = [];
     rawAttendanceData.forEach(att => {
-      const attText = `${att.status || ''} ${att.keterangan || ''}`.toUpperCase();
-      const isLOS = attText.includes('LOS') || attText.includes('ZAHRA');
+      const textUpper = (att.keterangan || '').toUpperCase();
+      const isLOS = textUpper.includes('LOS') || textUpper.includes('ZAHRA') || textUpper.includes('HYBRID');
 
       if (isLOS && att.nama) {
         let categoryStr = 'LOS';
-        if (attText.includes('HYBRID ZAHRA') || attText.includes('ZAHRA')) {
+        if (textUpper.includes('HYBRID ZAHRA') || textUpper.includes('ZAHRA')) {
           categoryStr = 'HYBRID ZAHRA';
-        } else if (attText.includes('LOS SD')) {
+        } else if (textUpper.includes('LOS SD') || textUpper.includes('SD')) {
           categoryStr = 'LOS SD';
-        } else if (attText.includes('LOS SMP')) {
+        } else if (textUpper.includes('LOS SMP') || textUpper.includes('SMP')) {
           categoryStr = 'LOS SMP';
-        } else if (attText.includes('LOS SMA')) {
+        } else if (textUpper.includes('LOS SMA') || textUpper.includes('SMA')) {
           categoryStr = 'LOS SMA';
-        } else if (attText.includes('PESANTREN')) {
+        } else if (textUpper.includes('PESANTREN')) {
           categoryStr = 'LOS PESANTREN';
         }
 
@@ -239,12 +250,12 @@ async function fetchPayrollData() {
       }
     });
 
-    // 3. Gabungkan kedua sumber data (Deduplikasi agar jika tutor mencatat LOS pada tanggal sama di DataForm tidak terhitung ganda)
+    // 3. Gabungkan kedua sumber data (Deduplikasi cerdas dengan cleanName)
     const combinedData = [...dataFormItems];
 
     attendanceLosItems.forEach(attItem => {
       const isDuplicate = dataFormItems.some(dfItem => 
-        dfItem.tutor.toLowerCase() === attItem.tutor.toLowerCase() &&
+        cleanName(dfItem.tutor) === cleanName(attItem.tutor) &&
         dfItem.tanggal === attItem.tanggal &&
         (dfItem.kategori.includes('LOS') || dfItem.kategori.includes('ZAHRA'))
       );
@@ -554,33 +565,45 @@ async function fetchAttendanceAndUsers() {
     const attRows = attendanceData.table.rows || [];
 
     rawAttendanceData = attRows.map(row => {
-      const userId = String(getCellValue(row, 1)).trim();
-      const userObj = usersMap[userId] || { nama: '', jabatan: '' };
+      const col1Val = String(getCellValue(row, 1)).trim();
+      const userObj = usersMap[col1Val] || {};
+
+      let tutorName = userObj.nama || col1Val;
+      let tutorJabatan = userObj.jabatan || 'Tutor';
+
+      if (!tutorName || tutorName.length < 2) {
+        const matchedSetting = tutorSalarySettings.find(s => cleanName(s.nama) === cleanName(col1Val));
+        if (matchedSetting) tutorName = matchedSetting.nama;
+      }
 
       const isoDate = parseToIsoDate(getCellValue(row, 2), getCellFormatted(row, 2));
 
-      const col5 = String(getCellValue(row, 5)).trim();
-      const col6 = String(getCellValue(row, 6)).trim();
-      const col7 = String(getCellValue(row, 7)).trim();
-      const col8 = String(getCellValue(row, 8)).trim();
-      const col9 = String(getCellValue(row, 9)).trim();
-
-      const combinedExtra = [col5, col6, col7, col8, col9].filter(Boolean).join(' ');
+      // Pindai seluruh sel di baris untuk mendeteksi catatan kegiatan/LOS
+      let allRowTextParts = [];
+      if (row && row.c) {
+        row.c.forEach(cell => {
+          if (cell) {
+            if (cell.v) allRowTextParts.push(String(cell.v));
+            if (cell.f) allRowTextParts.push(String(cell.f));
+          }
+        });
+      }
+      const fullRowText = allRowTextParts.join(' ');
 
       return {
         id: getCellValue(row, 0),
-        userId: userId,
-        nama: userObj.nama,
-        jabatan: userObj.jabatan,
+        userId: col1Val,
+        nama: tutorName,
+        jabatan: tutorJabatan,
         tanggal: isoDate,
         tanggalFmt: getCellFormatted(row, 2) || getCellValue(row, 2),
         jamMasuk: getCellValue(row, 3) || '-',
         jamKeluar: getCellValue(row, 4) || '-',
-        keterangan: combinedExtra,
-        status: col9 || 'Hadir',
+        keterangan: fullRowText,
+        status: String(getCellValue(row, 9) || 'Hadir').trim(),
         fotoIn: getCellValue(row, 10)
       };
-    }).filter(item => item.nama !== '' && item.tanggal !== '' && item.jabatan.toLowerCase().includes('tutor'));
+    }).filter(item => item.nama !== '' && item.tanggal !== '');
 
     processAttendanceData();
 
@@ -695,7 +718,7 @@ function exportAttendanceCSV() {
 }
 
 // ========================================================
-// 3. PAGE TARIF HONOR TUTOR (INPUT NOMINAL & REKAP KHUSUS ROLE TUTOR)
+// 3. PAGE TARIF HONOR TUTOR
 // ========================================================
 
 async function fetchSalarySettings() {
@@ -709,18 +732,18 @@ async function fetchSalarySettings() {
     const tutorNamesFromUsers = new Set(
       Object.values(usersMap)
         .filter(u => u.jabatan && u.jabatan.toLowerCase().includes('tutor'))
-        .map(u => u.nama.trim().toLowerCase())
+        .map(u => cleanName(u.nama))
     );
 
     tutorSalarySettings = [];
 
     rows.forEach(row => {
       const nama = String(getCellValue(row, 0)).trim();
-      const namaLower = nama.toLowerCase();
+      const namaClean = cleanName(nama);
 
       const isTutorRole = tutorNamesFromUsers.size === 0 
-        ? (!namaLower.includes('admin') && !namaLower.includes('office') && !namaLower.includes('direktur'))
-        : tutorNamesFromUsers.has(namaLower);
+        ? (!namaClean.includes('admin') && !namaClean.includes('office') && !namaClean.includes('direktur'))
+        : tutorNamesFromUsers.has(namaClean);
 
       if (nama && nama !== 'Nama Karyawan' && isTutorRole) {
         const honorSAC = parseFloat(getCellValue(row, 1)) || 50000;
