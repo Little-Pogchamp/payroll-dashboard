@@ -129,7 +129,7 @@ async function fetchGVizJson(url) {
   return JSON.parse(jsonString);
 }
 
-// FETCH ALL DATA
+// FETCH ALL DATA (Urutan: Attendance & Users -> SalarySettings -> Payroll)
 async function fetchAllData() {
   await fetchAttendanceAndUsers();
   await fetchSalarySettings();
@@ -186,7 +186,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
 }
 
 // ========================================================
-// 1. PAGE BERANDA: PAYROLL TUTOR (DATAFORM)
+// 1. PAGE BERANDA: PAYROLL TUTOR (DATAFORM + ATTENDANCE LOS)
 // ========================================================
 
 async function fetchPayrollData() {
@@ -197,15 +197,64 @@ async function fetchPayrollData() {
     const data = await fetchGVizJson(URL_DATAFORM);
     const rows = data.table.rows || [];
 
-    rawPayrollData = rows.map(row => {
+    // 1. Ambil data dari sheet DataForm
+    const dataFormItems = rows.map(row => {
       const isoDate = parseToIsoDate(getCellValue(row, 0), getCellFormatted(row, 0));
       return {
         tanggal: isoDate,
         tutor: String(getCellValue(row, 1)).trim(),
         kategori: String(getCellValue(row, 2)).trim().toUpperCase(),
-        kelas: String(getCellValue(row, 5)).trim()
+        kelas: String(getCellValue(row, 5)).trim(),
+        source: 'DataForm'
       };
     }).filter(item => item.tutor !== '' && item.tutor !== 'Tanpa Nama' && item.tutor !== 'Nama Tutor');
+
+    // 2. Ambil presensi LOS dari sheet Attendance
+    const attendanceLosItems = [];
+    rawAttendanceData.forEach(att => {
+      const attText = `${att.status || ''} ${att.keterangan || ''}`.toUpperCase();
+      const isLOS = attText.includes('LOS') || attText.includes('ZAHRA');
+
+      if (isLOS && att.nama) {
+        let categoryStr = 'LOS';
+        if (attText.includes('HYBRID ZAHRA') || attText.includes('ZAHRA')) {
+          categoryStr = 'HYBRID ZAHRA';
+        } else if (attText.includes('LOS SD')) {
+          categoryStr = 'LOS SD';
+        } else if (attText.includes('LOS SMP')) {
+          categoryStr = 'LOS SMP';
+        } else if (attText.includes('LOS SMA')) {
+          categoryStr = 'LOS SMA';
+        } else if (attText.includes('PESANTREN')) {
+          categoryStr = 'LOS PESANTREN';
+        }
+
+        attendanceLosItems.push({
+          tanggal: att.tanggal,
+          tutor: att.nama,
+          kategori: categoryStr,
+          kelas: att.keterangan || 'LOS',
+          source: 'Attendance'
+        });
+      }
+    });
+
+    // 3. Gabungkan kedua sumber data (Deduplikasi agar jika tutor mencatat LOS pada tanggal sama di DataForm tidak terhitung ganda)
+    const combinedData = [...dataFormItems];
+
+    attendanceLosItems.forEach(attItem => {
+      const isDuplicate = dataFormItems.some(dfItem => 
+        dfItem.tutor.toLowerCase() === attItem.tutor.toLowerCase() &&
+        dfItem.tanggal === attItem.tanggal &&
+        (dfItem.kategori.includes('LOS') || dfItem.kategori.includes('ZAHRA'))
+      );
+
+      if (!isDuplicate) {
+        combinedData.push(attItem);
+      }
+    });
+
+    rawPayrollData = combinedData;
 
     processPayrollData();
   } catch (err) {
@@ -262,19 +311,16 @@ function processPayrollData() {
       tutorMap[nama].countSAC += 1;
     }
 
-    // Catat breakdown tarif
     tutorMap[nama].tarifBreakdownMap[info.labelTag] = info.rate;
   });
 
   processedPayrollSummary = Object.values(tutorMap).map(tutor => {
-    // Format Rincian Sesi Mengajar: e.g. "2x SD (Gendis/Aydin), 1x SMA (Fadil)"
     const rincianParts = [];
     for (const [klsLabel, count] of Object.entries(tutor.losClassCounts)) {
       rincianParts.push(`${count}x ${klsLabel}`);
     }
     const rincianString = rincianParts.length > 0 ? rincianParts.join(', ') : '-';
 
-    // Format Breakdown Tarif Samping
     const breakdownTags = [];
     for (const [tag, rateVal] of Object.entries(tutor.tarifBreakdownMap)) {
       breakdownTags.push(`${tag} = ${formatNumberExcel(rateVal)}`);
@@ -342,10 +388,7 @@ function filterPayrollTable() {
   renderPayrollTable(filtered);
 }
 
-// ========================================================
-// EKSPOR EXCEL FORMAT RESMI (SESUAI FILE ACUAN)
-// ========================================================
-
+// EKSPOR EXCEL FORMAT RESMI
 function exportPayrollExcel() {
   if (!processedPayrollSummary || processedPayrollSummary.length === 0) {
     alert("Tidak ada data payroll untuk diekspor!");
@@ -365,7 +408,6 @@ function exportPayrollExcel() {
     totalLOSAll += tutor.countLOS;
     totalHonorAll += tutor.totalHonor;
 
-    // Menyiapkan 5 kolom rincian tarif samping
     let tagsCells = '';
     for (let i = 0; i < 5; i++) {
       const tagText = tutor.breakdownTags[i] || '';
@@ -517,6 +559,14 @@ async function fetchAttendanceAndUsers() {
 
       const isoDate = parseToIsoDate(getCellValue(row, 2), getCellFormatted(row, 2));
 
+      const col5 = String(getCellValue(row, 5)).trim();
+      const col6 = String(getCellValue(row, 6)).trim();
+      const col7 = String(getCellValue(row, 7)).trim();
+      const col8 = String(getCellValue(row, 8)).trim();
+      const col9 = String(getCellValue(row, 9)).trim();
+
+      const combinedExtra = [col5, col6, col7, col8, col9].filter(Boolean).join(' ');
+
       return {
         id: getCellValue(row, 0),
         userId: userId,
@@ -526,7 +576,8 @@ async function fetchAttendanceAndUsers() {
         tanggalFmt: getCellFormatted(row, 2) || getCellValue(row, 2),
         jamMasuk: getCellValue(row, 3) || '-',
         jamKeluar: getCellValue(row, 4) || '-',
-        status: String(getCellValue(row, 9) || 'Hadir').trim(),
+        keterangan: combinedExtra,
+        status: col9 || 'Hadir',
         fotoIn: getCellValue(row, 10)
       };
     }).filter(item => item.nama !== '' && item.tanggal !== '' && item.jabatan.toLowerCase().includes('tutor'));
