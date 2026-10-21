@@ -12,6 +12,22 @@ function formatRupiah(number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number || 0);
 }
 
+// Mapping nama bulan Bahasa Indonesia
+const indonesianMonths = {
+  'januari': '01', 'jan': '01',
+  'februari': '02', 'feb': '02',
+  'maret': '03', 'mar': '03',
+  'april': '04', 'apr': '04',
+  'mei': '05',
+  'juni': '06', 'jun': '06',
+  'juli': '07', 'jul': '07',
+  'agustus': '08', 'ags': '08', 'agu': '08',
+  'september': '09', 'sep': '09',
+  'oktober': '10', 'okt': '10',
+  'november': '11', 'nov': '11',
+  'desember': '12', 'des': '12'
+};
+
 // Helper membaca cell secara aman (Null-Safe)
 function getCellValue(row, colIndex) {
   if (!row || !row.c || !row.c[colIndex]) return '';
@@ -25,11 +41,12 @@ function getCellFormatted(row, colIndex) {
   return cell.f || (cell.v !== null && cell.v !== undefined ? String(cell.v) : '');
 }
 
-// Konversi DD/MM/YYYY atau Date(Y,M,D) ke YYYY-MM-DD
+// Konversi DD/MM/YYYY, Date(Y,M,D), atau "Senin, 5 Oktober 2026" ke YYYY-MM-DD
 function parseToIsoDate(rawVal, formattedVal) {
   let strVal = String(formattedVal || rawVal || '').trim();
   if (!strVal) return '';
 
+  // 1. Format GViz Date(YYYY,M,D)
   if (strVal.includes('Date(')) {
     const matches = strVal.match(/\d+/g);
     if (matches && matches.length >= 3) {
@@ -40,6 +57,7 @@ function parseToIsoDate(rawVal, formattedVal) {
     }
   }
 
+  // 2. Format Angka DD/MM/YYYY
   if (strVal.includes('/')) {
     const parts = strVal.split('/');
     if (parts.length === 3) {
@@ -47,6 +65,26 @@ function parseToIsoDate(rawVal, formattedVal) {
       const m = parts[1].padStart(2, '0');
       const y = parts[2].trim();
       return `${y}-${m}-${d}`;
+    }
+  }
+
+  // 3. Format ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+    return strVal;
+  }
+
+  // 4. Format Teks Indonesia (contoh: "Senin, 5 Oktober 2026" atau "5 Oktober 2026")
+  let cleanStr = strVal.replace(/^(senin|selasa|rabu|kamis|jumat|sabtu|minggu)[,\s]*/i, '').trim();
+  const parts = cleanStr.split(/\s+/);
+  
+  if (parts.length >= 3) {
+    const day = parts[0].padStart(2, '0');
+    const monthStr = parts[1].toLowerCase();
+    const year = parts[2];
+    const month = indonesianMonths[monthStr] || '01';
+    
+    if (!isNaN(day) && !isNaN(year)) {
+      return `${year}-${month}-${day}`;
     }
   }
 
@@ -69,7 +107,6 @@ async function fetchPayrollData() {
 
     const text = await response.text();
 
-    // Ekstrak objek JSON secara akurat
     const firstOpen = text.indexOf('{');
     const lastClose = text.lastIndexOf('}');
     
