@@ -180,13 +180,12 @@ function calculateSessionInfo(tutorName, category, kelas) {
   let labelTag = 'SAC';
   let detailClass = kls || 'Umum';
 
-  // Deteksi khusus Hybrid Zahra -> Wajib dihitung sebagai SAC dengan honor SAC tutor
   const isHybridZahra = (cat.includes('HYBRID') || kls.includes('HYBRID')) && (cat.includes('ZAHRA') || kls.includes('ZAHRA'));
 
   if (tutorSetting) {
     if (isHybridZahra) {
       rate = tutorSetting.honorSAC || 50000;
-      labelTag = 'SAC (Hybrid Zahra)';
+      labelTag = 'SAC';
       detailClass = kls || 'Hybrid Zahra';
     } else if (cat.includes('ARIANNA') || kls.includes('ARIANNA')) {
       rate = tutorSetting.honorHybrid || tutorSetting.honorSAC || 75000;
@@ -213,7 +212,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
       detailClass = kls && !kls.includes('LOS') ? `SMA (${kls})` : 'SMA (Fadil)';
     } else if (cat.includes('LOS')) {
       rate = tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 97500;
-      labelTag = 'LOS General';
+      labelTag = 'LOS SD/General';
       detailClass = kls && !kls.includes('LOS') ? `LOS (${kls})` : 'LOS';
     } else {
       rate = tutorSetting.honorSAC || 50000;
@@ -225,7 +224,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
 }
 
 // ========================================================
-// 1. PAGE BERANDA: PAYROLL TUTOR (DATAFORM + ATTENDANCE)
+// 1. PAGE BERANDA: PAYROLL TUTOR
 // ========================================================
 
 async function fetchPayrollData() {
@@ -236,7 +235,6 @@ async function fetchPayrollData() {
     const data = await fetchGVizJson(URL_DATAFORM);
     const rows = data.table.rows || [];
 
-    // 1. Kumpulkan DataForm dengan ID Unik & Anti Double Submit
     const dataFormItems = [];
     const seenKeys = new Set();
 
@@ -271,7 +269,6 @@ async function fetchPayrollData() {
       }
     });
 
-    // 2. Kumpulkan Presensi Murni LOS dari Attendance (Abaikan jika Hybrid Zahra)
     const attendanceLosItems = [];
     rawAttendanceData.forEach((att, attIdx) => {
       const textUpper = (att.keterangan || '').toUpperCase();
@@ -308,7 +305,6 @@ async function fetchPayrollData() {
       }
     });
 
-    // 3. Gabungkan DataForm & Attendance
     const combined = [...dataFormItems];
     attendanceLosItems.forEach(attItem => {
       const isDuplicate = dataFormItems.some(dfItem => 
@@ -323,7 +319,6 @@ async function fetchPayrollData() {
 
     rawAllSessions = combined;
 
-    // Filter dengan daftar sesi yang dikecualikan (deleted/excluded)
     const excludedIds = new Set(getExcludedSessionIds());
     rawPayrollData = rawAllSessions.filter(item => !excludedIds.has(item.id) && !excludedIds.has(item.dedupKey));
 
@@ -341,6 +336,14 @@ function processPayrollData() {
   const startDate = document.getElementById('start-date').value;
   const endDate = document.getElementById('end-date').value;
 
+  // Set Tanggal Keterlambatan Tutor dari Attendance: Set of "tutor_clean|yyyy-mm-dd"
+  const lateDatesMap = new Set();
+  rawAttendanceData.forEach(att => {
+    if (att.status && att.status.toUpperCase() === 'TERLAMBAT' && att.nama && att.tanggal) {
+      lateDatesMap.add(`${cleanName(att.nama)}|${att.tanggal}`);
+    }
+  });
+
   const filteredRows = rawPayrollData.filter(item => {
     if (!item.tanggal) return true;
     if (startDate && item.tanggal < startDate) return false;
@@ -348,10 +351,20 @@ function processPayrollData() {
     return true;
   });
 
+  // Urutkan sesi berdasarkan tanggal & jam masuk agar 1 SAC pertama teridentifikasi dengan tepat
+  filteredRows.sort((a, b) => {
+    if (a.tanggal !== b.tanggal) return a.tanggal.localeCompare(b.tanggal);
+    return (a.jamMasuk || '').localeCompare(b.jamMasuk || '');
+  });
+
   const tutorMap = {};
+  const penalizedSacDates = new Set(); // Melacak apakah potongan 50% SAC ke-1 sudah dikenakan pada hari tersebut
 
   filteredRows.forEach(item => {
     const nama = item.tutor;
+    const tNameClean = cleanName(nama);
+    const lateKey = `${tNameClean}|${item.tanggal}`;
+
     if (!tutorMap[nama]) {
       tutorMap[nama] = {
         nama,
@@ -359,9 +372,9 @@ function processPayrollData() {
         countSAC: 0,
         countLOS: 0,
         totalHonor: 0,
-        losClassCounts: {},
-        tarifBreakdownMap: {},
-        kegiatanNotes: []
+        potonganTerlambatCount: 0,
+        totalDenda: 0,
+        losClassCounts: {}
       };
     }
 
@@ -370,16 +383,25 @@ function processPayrollData() {
     }
 
     const info = calculateSessionInfo(nama, item.kategori, item.kelas);
-    tutorMap[nama].totalHonor += info.rate;
-
     const catUpper = (item.kategori || '').toUpperCase();
     const klsUpper = (item.kelas || '').toUpperCase();
 
-    // Pastikan Hybrid Zahra BUKAN LOS (dihitung sebagai SAC)
     const isHybridZahra = (catUpper.includes('HYBRID') || klsUpper.includes('HYBRID')) && 
                           (catUpper.includes('ZAHRA') || klsUpper.includes('ZAHRA'));
-
     const isLOS = !isHybridZahra && (catUpper.includes('LOS') || klsUpper.includes('LOS'));
+
+    let sessionHonor = info.rate;
+
+    // Aturan Denda Terlambat: Potong 50% HANYA pada 1 SAC pertama di hari tersebut
+    if (!isLOS && lateDatesMap.has(lateKey) && !penalizedSacDates.has(lateKey)) {
+      penalizedSacDates.add(lateKey);
+      const denda = info.rate * 0.5;
+      sessionHonor = info.rate - denda;
+      tutorMap[nama].potonganTerlambatCount += 1;
+      tutorMap[nama].totalDenda += denda;
+    }
+
+    tutorMap[nama].totalHonor += sessionHonor;
 
     if (isLOS) {
       tutorMap[nama].countLOS += 1;
@@ -388,8 +410,6 @@ function processPayrollData() {
     } else {
       tutorMap[nama].countSAC += 1;
     }
-
-    tutorMap[nama].tarifBreakdownMap[info.labelTag] = info.rate;
   });
 
   processedPayrollSummary = Object.values(tutorMap).map(tutor => {
@@ -399,20 +419,14 @@ function processPayrollData() {
     }
     const rincianString = rincianParts.length > 0 ? rincianParts.join(', ') : '-';
 
-    const breakdownTags = [];
-    for (const [tag, rateVal] of Object.entries(tutor.tarifBreakdownMap)) {
-      breakdownTags.push(`${tag} = ${formatNumberExcel(rateVal)}`);
-    }
-
     return {
       nama: tutor.nama,
       hadir: tutor.datesSet.size || (tutor.countSAC + tutor.countLOS),
       countSAC: tutor.countSAC,
       countLOS: tutor.countLOS,
       rincian: rincianString,
-      kegiatan: tutor.kegiatanNotes.length > 0 ? tutor.kegiatanNotes.join(', ') : '-',
-      totalHonor: tutor.totalHonor,
-      breakdownTags: breakdownTags
+      dendaInfo: tutor.totalDenda > 0 ? `-${formatRupiah(tutor.totalDenda)} (${tutor.potonganTerlambatCount}x)` : '-',
+      totalHonor: tutor.totalHonor
     };
   });
 
@@ -442,7 +456,7 @@ function renderPayrollTable(data) {
       <td class="p-3 text-center font-semibold text-slate-700">${tutor.countSAC}</td>
       <td class="p-3 text-center font-semibold text-slate-700">${tutor.countLOS}</td>
       <td class="p-3 text-slate-600 text-[11px]">${tutor.rincian}</td>
-      <td class="p-3 text-center text-slate-500 text-[11px]">${tutor.kegiatan}</td>
+      <td class="p-3 text-center text-red-600 font-semibold text-[11px]">${tutor.dendaInfo}</td>
       <td class="p-3 text-right font-bold text-[#059669]">${formatRupiah(tutor.totalHonor)}</td>
     `;
     tbody.appendChild(tr);
@@ -466,6 +480,7 @@ function filterPayrollTable() {
   renderPayrollTable(filtered);
 }
 
+// EKSPOR EXCEL RINGKAS
 function exportPayrollExcel() {
   if (!processedPayrollSummary || processedPayrollSummary.length === 0) {
     alert("Tidak ada data payroll untuk diekspor!");
@@ -485,12 +500,6 @@ function exportPayrollExcel() {
     totalLOSAll += tutor.countLOS;
     totalHonorAll += tutor.totalHonor;
 
-    let tagsCells = '';
-    for (let i = 0; i < 5; i++) {
-      const tagText = tutor.breakdownTags[i] || '';
-      tagsCells += `<td style="font-size:8.5pt;">${tagText}</td>`;
-    }
-
     rowsHtml += `
       <tr>
         <td style="text-align:center;">${idx + 1}</td>
@@ -498,11 +507,9 @@ function exportPayrollExcel() {
         <td style="text-align:center;">${tutor.hadir}</td>
         <td style="text-align:center;">${tutor.countSAC}</td>
         <td style="text-align:center;">${tutor.countLOS}</td>
-        <td style="font-size:8.5pt;">${tutor.rincian}</td>
-        <td style="text-align:center; font-size:8.5pt;">${tutor.kegiatan}</td>
+        <td style="font-size:9pt;">${tutor.rincian}</td>
+        <td style="text-align:center; color:#dc2626;">${tutor.dendaInfo}</td>
         <td style="text-align:right; font-weight:bold;">Rp&nbsp;${formatNumberExcel(tutor.totalHonor)}</td>
-        <td style="border:none;"></td>
-        ${tagsCells}
       </tr>
     `;
   });
@@ -518,10 +525,10 @@ function exportPayrollExcel() {
             <x:ExcelWorksheet>
               <x:Name>Laporan Honor</x:Name>
               <x:WorksheetOptions>
-                <x:Print><x:ValidPrinterInfo/><x:PaperSizeIndex>9</x:PaperSizeIndex><x:Scale>70</x:Scale><x:FitToPage/></x:Print>
+                <x:Print><x:ValidPrinterInfo/><x:PaperSizeIndex>9</x:PaperSizeIndex><x:Scale>85</x:Scale><x:FitToPage/></x:Print>
                 <x:FitToPage/>
                 <x:PageSetup>
-                  <x:Layout x:Orientation="Landscape"/>
+                  <x:Layout x:Orientation="Portrait"/>
                   <x:PageMargins x:Header="0.3" x:Footer="0.3" x:Top="0.5" x:Bottom="0.5" x:Left="0.5" x:Right="0.5"/>
                 </x:PageSetup>
               </x:WorksheetOptions>
@@ -531,33 +538,29 @@ function exportPayrollExcel() {
       </xml>
       <![endif]-->
       <style>
-        @page { size: A4 landscape; margin: 0.5in; }
         body { font-family: Calibri, sans-serif; }
-        table { border-collapse: collapse; margin: 0 auto; }
+        table { border-collapse: collapse; margin: 0 auto; width: 100%; }
         th, td { border: 0.5pt solid #000; padding: 6px; font-size: 9.5pt; vertical-align: middle; }
-        .th-header { background-color: #059669; color: #ffffff; font-weight: bold; text-align: center; }
       </style>
     </head>
     <body>
-      <div style="width:1450px; margin:0 auto;">
-        <h3 style="margin-bottom:4px; margin-left: 4px;">HONOR TUTOR 2026/2027</h3>
-        <p style="margin-bottom:12px; margin-left: 4px;"><strong>Periode:</strong> ${startDate} s/d ${endDate}</p>
-        <table style="width:1450px;">
+      <div style="width:850px; margin:0 auto;">
+        <h3 style="margin-bottom:4px;">REKAP HONORARIUM TUTOR 2026/2027</h3>
+        <p style="margin-bottom:12px;"><strong>Periode:</strong> ${startDate} s/d ${endDate}</p>
+        <table style="width:850px;">
           <colgroup>
-            <col width="30"><col width="160"><col width="45"><col width="45"><col width="65"><col width="220"><col width="120"><col width="90"><col width="20"><col width="120"><col width="130"><col width="140"><col width="120"><col width="120">
+            <col width="35"><col width="180"><col width="50"><col width="50"><col width="65"><col width="230"><col width="110"><col width="130">
           </colgroup>
           <thead>
-            <tr>
-              <th style="background:#059669; color:#fff;">No</th>
-              <th style="background:#059669; color:#fff;">Nama Tutor</th>
-              <th style="background:#059669; color:#fff;">Hadir</th>
-              <th style="background:#059669; color:#fff;">SAC</th>
-              <th style="background:#059669; color:#fff;">LOS Total</th>
-              <th style="background:#059669; color:#fff;">Rincian Sesi Mengajar</th>
-              <th style="background:#059669; color:#fff;">Kegiatan</th>
-              <th style="background:#059669; color:#fff;">Total Honor</th>
-              <th style="border:none;"></th>
-              <th colspan="5" style="border:none;"></th>
+            <tr style="background:#059669; color:#fff; font-weight:bold; text-align:center;">
+              <th>No</th>
+              <th>Nama Tutor</th>
+              <th>Hadir</th>
+              <th>SAC</th>
+              <th>LOS</th>
+              <th>Rincian Sesi Mengajar</th>
+              <th>Denda Terlambat</th>
+              <th>Total Honor</th>
             </tr>
           </thead>
           <tbody>
@@ -568,8 +571,6 @@ function exportPayrollExcel() {
               <td style="text-align:center;">${totalLOSAll}</td>
               <td></td><td></td>
               <td style="text-align:right;">Rp&nbsp;${formatNumberExcel(totalHonorAll)}</td>
-              <td style="border:none;"></td>
-              <td colspan="5" style="border:none;"></td>
             </tr>
           </tbody>
         </table>
@@ -592,9 +593,9 @@ function exportPayrollCSV() {
   const startDate = document.getElementById('start-date').value || 'Awal';
   const endDate = document.getElementById('end-date').value || 'Akhir';
 
-  let csv = "data:text/csv;charset=utf-8,\uFEFFNo,Nama Tutor,Hadir,SAC,LOS Total,Rincian Sesi Mengajar,Kegiatan,Total Honor,Breakdown Tarif\n";
+  let csv = "data:text/csv;charset=utf-8,\uFEFFNo,Nama Tutor,Hadir,SAC,LOS,Rincian Sesi Mengajar,Denda Terlambat,Total Honor\n";
   processedPayrollSummary.forEach((item, idx) => {
-    csv += `${idx + 1},"${item.nama}",${item.hadir},${item.countSAC},${item.countLOS},"${item.rincian}","${item.kegiatan}",${item.totalHonor},"${item.breakdownTags.join('; ')}"\n`;
+    csv += `${idx + 1},"${item.nama}",${item.hadir},${item.countSAC},${item.countLOS},"${item.rincian}","${item.dendaInfo}",${item.totalHonor}\n`;
   });
 
   const link = document.createElement("a");
@@ -752,7 +753,7 @@ function resetAllExclusions() {
 }
 
 // ========================================================
-// 3. PAGE BARU: RINCIAN SLIP HONOR INDIVIDUAL TUTOR
+// 3. PAGE RINCIAN SLIP HONOR INDIVIDUAL TUTOR
 // ========================================================
 
 function populateIndividualTutorDropdown() {
@@ -781,7 +782,6 @@ function renderIndividualPayrollPage() {
   const hadirCountLabel = document.getElementById('indiv-hadir-count');
   const totalSesiLabel = document.getElementById('indiv-total-sesi');
   const totalHonorLabel = document.getElementById('indiv-total-honor');
-  const explanationBox = document.getElementById('indiv-explanation-box');
   const tbody = document.getElementById('indiv-table-body');
 
   if (!selectTutor || !tbody) return;
@@ -796,12 +796,18 @@ function renderIndividualPayrollPage() {
     hadirCountLabel.innerText = '0 Hari';
     totalSesiLabel.innerText = '0 Sesi';
     totalHonorLabel.innerText = 'Rp 0';
-    explanationBox.innerHTML = `<p class="text-slate-500 italic">Silakan pilih nama tutor di atas untuk melihat rincian penjelasan.</p>`;
     tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Silakan pilih tutor terlebih dahulu.</td></tr>`;
     return;
   }
 
-  // Filter Sesi Aktif Tutor Ini
+  // Set Tanggal Keterlambatan khusus tutor ini dari Attendance
+  const lateDatesMap = new Set();
+  rawAttendanceData.forEach(att => {
+    if (att.status && att.status.toUpperCase() === 'TERLAMBAT' && cleanName(att.nama) === targetTutorClean && att.tanggal) {
+      lateDatesMap.add(att.tanggal);
+    }
+  });
+
   const tutorSessions = rawPayrollData.filter(s => {
     if (cleanName(s.tutor) !== targetTutorClean) return false;
     if (startDate && s.tanggal < startDate) return false;
@@ -809,7 +815,10 @@ function renderIndividualPayrollPage() {
     return true;
   });
 
-  tutorSessions.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+  tutorSessions.sort((a, b) => {
+    if (a.tanggal !== b.tanggal) return a.tanggal.localeCompare(b.tanggal);
+    return (a.jamMasuk || '').localeCompare(b.jamMasuk || '');
+  });
 
   const displayTutorName = tutorSessions.length > 0 ? tutorSessions[0].tutor : (selectTutor.options[selectTutor.selectedIndex]?.text || '-');
   namaTutorLabel.innerText = displayTutorName;
@@ -817,8 +826,7 @@ function renderIndividualPayrollPage() {
 
   const datesSet = new Set();
   let totalHonor = 0;
-  const breakdownCounts = {};
-  const explanationList = [];
+  const penalizedSacDates = new Set();
 
   tbody.innerHTML = '';
 
@@ -826,7 +834,6 @@ function renderIndividualPayrollPage() {
     hadirCountLabel.innerText = '0 Hari';
     totalSesiLabel.innerText = '0 Sesi';
     totalHonorLabel.innerText = 'Rp 0';
-    explanationBox.innerHTML = `<p class="text-amber-700 bg-amber-50 p-2 rounded">Tidak ada record mengajar untuk <b>${displayTutorName}</b> pada rentang tanggal yang dipilih.</p>`;
     tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Tidak ada sesi mengajar ditemukan.</td></tr>`;
     return;
   }
@@ -835,13 +842,28 @@ function renderIndividualPayrollPage() {
     if (s.tanggal) datesSet.add(s.tanggal);
 
     const info = calculateSessionInfo(s.tutor, s.kategori, s.kelas);
-    totalHonor += info.rate;
+    const catUpper = (s.kategori || '').toUpperCase();
+    const klsUpper = (s.kelas || '').toUpperCase();
 
-    if (!breakdownCounts[info.labelTag]) {
-      breakdownCounts[info.labelTag] = { count: 0, rate: info.rate, subtotal: 0 };
+    const isHybridZahra = (catUpper.includes('HYBRID') || klsUpper.includes('HYBRID')) && 
+                          (catUpper.includes('ZAHRA') || klsUpper.includes('ZAHRA'));
+    const isLOS = !isHybridZahra && (catUpper.includes('LOS') || klsUpper.includes('LOS'));
+
+    let sessionHonor = info.rate;
+    let statusLabel = `<span class="text-emerald-700 font-medium">Hadir Tepat Waktu</span>`;
+
+    // Cek keterlambatan di hari ini (Potong 50% hanya untuk SAC ke-1)
+    if (lateDatesMap.has(s.tanggal)) {
+      if (!isLOS && !penalizedSacDates.has(s.tanggal)) {
+        penalizedSacDates.add(s.tanggal);
+        sessionHonor = info.rate * 0.5;
+        statusLabel = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">Terlambat (-50% 1st SAC)</span>`;
+      } else {
+        statusLabel = `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">Terlambat (Sesi Ke-2 Full)</span>`;
+      }
     }
-    breakdownCounts[info.labelTag].count += 1;
-    breakdownCounts[info.labelTag].subtotal += info.rate;
+
+    totalHonor += sessionHonor;
 
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-slate-50 border-b border-slate-200';
@@ -852,8 +874,8 @@ function renderIndividualPayrollPage() {
       <td class="p-3 text-center font-mono">${s.jamMasuk || '-'} - ${s.jamKeluar || '-'}</td>
       <td class="p-3 font-medium text-slate-800">${s.kelas || '-'}</td>
       <td class="p-3 text-slate-600">${s.mapel || '-'}</td>
-      <td class="p-3 text-right font-medium text-slate-700">${formatRupiah(info.rate)}</td>
-      <td class="p-3 text-right font-bold text-emerald-700">${formatRupiah(info.rate)}</td>
+      <td class="p-3 text-center">${statusLabel}</td>
+      <td class="p-3 text-right font-bold text-emerald-700">${formatRupiah(sessionHonor)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -861,25 +883,6 @@ function renderIndividualPayrollPage() {
   hadirCountLabel.innerText = `${datesSet.size} Hari`;
   totalSesiLabel.innerText = `${tutorSessions.length} Sesi`;
   totalHonorLabel.innerText = formatRupiah(totalHonor);
-
-  // Buat Teks Penjelasan Kalkulasi Honor yang Jelas
-  let expHtml = `<ul class="space-y-1.5 list-disc list-inside font-medium text-slate-800">`;
-  for (const [label, data] of Object.entries(breakdownCounts)) {
-    expHtml += `<li><b>${data.count}x Sesi ${label}</b> @ ${formatRupiah(data.rate)} = <span class="font-bold text-emerald-800">${formatRupiah(data.subtotal)}</span></li>`;
-  }
-  expHtml += `</ul>`;
-
-  // Tambahan Catatan Aturan Transparan
-  expHtml += `
-    <div class="mt-3 pt-2 border-t border-emerald-200/80 text-[11px] text-slate-600 space-y-1">
-      <p>💡 <b>Ketentuan Penghitungan:</b></p>
-      <p>• Sesi dengan keterangan <b>"Hybrid Zahra"</b> dihitung sebagai kategori <b>SAC</b> dengan nominal honor SAC tutor (${formatRupiah(calculateSessionInfo(displayTutorName, 'SAC', '').rate)}/sesi).</p>
-      <p>• Sesi ganda/double submit pada jam & kelas yang persis sama telah di-filter otomatis.</p>
-      <p>• <b>Total Akhir Honorarium:</b> <span class="font-bold text-emerald-800 text-sm">${formatRupiah(totalHonor)}</span></p>
-    </div>
-  `;
-
-  explanationBox.innerHTML = expHtml;
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
