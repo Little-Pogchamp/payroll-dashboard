@@ -35,7 +35,7 @@
   </header>
 
   <div class="flex flex-1 relative">
-    <!-- WordPress Left Sidebar Navigation (Statis / Sticky saat scroll) -->
+    <!-- WordPress Left Sidebar Navigation (Statis / Sticky) -->
     <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 h-[calc(100vh-2.5rem)] sticky top-10 flex flex-col justify-between select-none z-20">
       <div>
         <div class="p-4 border-b border-slate-800">
@@ -52,6 +52,12 @@
           <button id="nav-absensi" onclick="switchTab('absensi')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="clipboard-list" class="w-4 h-4"></i>
             <span>Rekap Absensi Tutor</span>
+          </button>
+
+          <!-- Menu Tarif Honor Tutor -->
+          <button id="nav-tarif" onclick="switchTab('tarif')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            <span>Tarif Honor Tutor</span>
           </button>
         </nav>
       </div>
@@ -233,6 +239,133 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- PAGE 3: TARIF HONOR TUTOR (INPUT & TABEL REKAP 2026/2027) -->
+      <section id="page-tarif" class="space-y-6 hidden">
+        <div class="border-b border-slate-300 pb-4">
+          <h1 class="text-2xl font-bold text-[#1d2327]">Input & Setting Nominal Honor Tutor 2026/2027</h1>
+          <p class="text-xs text-slate-500 mt-1">Pilih nama tutor terlebih dahulu untuk memperbarui nominal honor sesuai dengan tabel acuan fisik.</p>
+        </div>
+
+        <!-- Form Input Nominal Honor Tutor -->
+        <div class="bg-white p-6 rounded border border-slate-300 shadow-sm space-y-4">
+          <div class="border-b border-slate-200 pb-3 flex items-center gap-2">
+            <i data-lucide="user-check" class="w-4 h-4 text-[#2271b1]"></i>
+            <h2 class="font-bold text-sm text-slate-800">Form Setting Honor Per Tutor</h2>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <!-- 1. Pilih Nama Tutor -->
+            <div class="lg:col-span-4 bg-slate-50 p-3 rounded border border-slate-200">
+              <label class="block font-bold text-slate-700 uppercase mb-1">1. Pilih Nama Tutor <span class="text-red-500">*</span></label>
+              <select id="select-tutor-name" onchange="onTutorSelectChange()" class="w-full px-3 py-2 border border-slate-300 rounded font-semibold text-slate-900 focus:ring-2 focus:ring-[#2271b1] focus:outline-none bg-white">
+                <option value="">-- Pilih Tutor --</option>
+              </select>
+            </div>
+
+            <!-- 2. Input Fields -->
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor SAC (Rp)</label>
+              <input type="number" id="input-honor-sac" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor Hybrid Arianna (Rp)</label>
+              <input type="number" id="input-honor-hybrid" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor LOS SD (Rp)</label>
+              <input type="number" id="input-honor-los-sd" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor LOS SMP (Rp)</label>
+              <input type="number" id="input-honor-los-smp" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor Pesantren (Rp)</label>
+              <input type="number" id="input-honor-pesantren" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor LOS SMA (Dalam Kota)</label>
+              <input type="number" id="input-honor-los-sma-dk" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+
+            <div>
+              <label class="block font-semibold text-slate-600 uppercase mb-1">Honor LOS SMA (Luar Kota)</label>
+              <input type="number" id="input-honor-los-sma-lk" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 pt-2">
+            <button onclick="saveTutorTarif()" class="flex items-center gap-1.5 bg-[#2271b1] hover:bg-[#135e96] text-white font-medium px-4 py-2 rounded text-xs transition">
+              <i data-lucide="save" class="w-4 h-4"></i> Simpan / Update Nominal Honor
+            </button>
+            <button onclick="resetTutorTarifForm()" class="flex items-center gap-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-3 py-2 rounded text-xs transition">
+              Reset Form
+            </button>
+          </div>
+        </div>
+
+        <!-- Tampilan Tabel Sesuai Lembar Fisik HONOR TUTOR 2026/2027 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          <!-- Tabel Kiri (Utama): Honor Tutor Per Sesi -->
+          <div class="lg:col-span-2 bg-white rounded border border-slate-300 shadow-sm overflow-hidden flex flex-col">
+            <div class="p-4 bg-slate-100 border-b border-slate-300 font-bold text-xs uppercase text-slate-700 flex justify-between items-center">
+              <span>HONOR TUTOR 2026/2027</span>
+              <span class="text-[10px] text-slate-500 font-normal">*Sesuai Lembar Pengesahan</span>
+            </div>
+            <div class="overflow-x-auto flex-1">
+              <table class="w-full text-left border-collapse text-[11px]">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 font-bold text-slate-700 uppercase">
+                    <th class="p-2.5 text-center w-10">NO</th>
+                    <th class="p-2.5">NAMA TUTOR</th>
+                    <th class="p-2.5 text-right">HONOR SAC</th>
+                    <th class="p-2.5 text-right">HONOR HYBRID ARIANNA</th>
+                    <th class="p-2.5 text-right">HONOR LOS SD</th>
+                    <th class="p-2.5 text-right">HONOR LOS SMP</th>
+                    <th class="p-2.5 text-right">HONOR PESANTREN</th>
+                    <th class="p-2.5 text-right">HONOR LOS SMA (DALAM KOTA)</th>
+                    <th class="p-2.5 text-right">HONOR LOS SMA (LUAR KOTA)</th>
+                  </tr>
+                </thead>
+                <tbody id="tarif-tutor-table-body" class="divide-y divide-slate-200">
+                  <tr>
+                    <td colspan="9" class="p-8 text-center text-slate-400">Memuat data tarif honor tutor...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tabel Kanan (Samping): Daftar Honor Kegiatan -->
+          <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden flex flex-col">
+            <div class="p-4 bg-slate-100 border-b border-slate-300 font-bold text-xs uppercase text-slate-700">
+              DAFTAR HONOR KEGIATAN
+            </div>
+            <div class="overflow-x-auto flex-1">
+              <table class="w-full text-left border-collapse text-[11px]">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 font-bold text-slate-700 uppercase">
+                    <th class="p-2.5 text-center w-10">NO</th>
+                    <th class="p-2.5">KEGIATAN</th>
+                    <th class="p-2.5 text-right">JUMLAH HONOR</th>
+                  </tr>
+                </thead>
+                <tbody id="kegiatan-table-body" class="divide-y divide-slate-200">
+                  <!-- Auto-filled by app.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       </section>
 

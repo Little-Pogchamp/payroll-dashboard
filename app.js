@@ -4,6 +4,7 @@ const SPREADSHEET_ID = '1PkmW4hah19NQjfd__Sz2c3ZGONO4GWDuukVs4ViLGYE';
 const URL_DATAFORM = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=DataForm`;
 const URL_USERS = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Users`;
 const URL_ATTENDANCE = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance`;
+const URL_SALARYSETTINGS = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=SalarySettings`;
 
 // Global State
 let rawPayrollData = [];
@@ -13,9 +14,32 @@ let usersMap = {};
 let rawAttendanceData = [];
 let processedAttendanceSummary = [];
 
+let tutorSalarySettings = []; // Data tarif honor per tutor
+
+// Master List Honor Kegiatan (Sesuai Gambar Acuan Fisik)
+const daftarHonorKegiatanMaster = [
+  { no: 1, kegiatan: "HONOR TRANSPORT", honor: 20000 },
+  { no: 2, kegiatan: "HONOR KEGIATAN NON AKADEMIS", honor: 30000 },
+  { no: 3, kegiatan: "HONOR KEGIATAN NON AKADEMIS (LAMA)", honor: 50000 },
+  { no: 4, kegiatan: "HONOR BIMTEK", honor: 50000 },
+  { no: 5, kegiatan: "HONOR PENGAWAS TKA SD", honor: 55000 },
+  { no: 6, kegiatan: "HONOR PENGAWAS TKA SMP", honor: 65000 },
+  { no: 7, kegiatan: "HONOR PENGAWAS TKA SMA", honor: 75000 },
+  { no: 8, kegiatan: "HONOR LEMBUR WEEKEND", honor: 100000 },
+  { no: 9, kegiatan: "HONOR PEMBUATAN SOAL UJIAN SD", honor: null },
+  { no: 10, kegiatan: "HONOR PEMBUATAN SOAL UJIAN SMP", honor: null },
+  { no: 11, kegiatan: "HONOR PEMBUATAN SOAL UJIAN SMA", honor: null },
+  { no: 12, kegiatan: "HONOR PENGAWAS UJIAN", honor: null },
+  { no: 13, kegiatan: "HONOR PEMBAGIAN RAPORT WALIKELAS", honor: 300000 },
+  { no: 14, kegiatan: "HONOR WEEKLY REPORT (PERLEMBAR)", honor: 3750 }
+];
+
 // Format Angka ke Rupiah
 function formatRupiah(number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number || 0);
+  if (number === null || number === undefined || number === '' || isNaN(number) || number === 0) {
+    return '-';
+  }
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number);
 }
 
 // Mapping bulan Bahasa Indonesia
@@ -104,6 +128,7 @@ async function fetchGVizJson(url) {
 async function fetchAllData() {
   await fetchPayrollData();
   await fetchAttendanceAndUsers();
+  await fetchSalarySettings();
 }
 
 // ========================================================
@@ -245,7 +270,7 @@ function exportPayrollCSV() {
 }
 
 // ========================================================
-// 2. PAGE REKAP ABSENSI (ATTENDANCE + USERS - KHUSUS TUTOR)
+// 2. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
 // ========================================================
 
 async function fetchAttendanceAndUsers() {
@@ -253,7 +278,6 @@ async function fetchAttendanceAndUsers() {
   if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Memuat data absensi tutor...</td></tr>`;
 
   try {
-    // A. Fetch Sheet Users
     const usersData = await fetchGVizJson(URL_USERS);
     const userRows = usersData.table.rows || [];
     usersMap = {};
@@ -267,7 +291,6 @@ async function fetchAttendanceAndUsers() {
       }
     });
 
-    // B. Fetch Sheet Attendance
     const attendanceData = await fetchGVizJson(URL_ATTENDANCE);
     const attRows = attendanceData.table.rows || [];
 
@@ -311,7 +334,6 @@ function processAttendanceData() {
     return true;
   });
 
-  // Urutkan dari tanggal terbaru
   processedAttendanceSummary.sort((a, b) => b.tanggal.localeCompare(a.tanggal));
 
   renderAttendanceTable(processedAttendanceSummary);
@@ -374,7 +396,6 @@ function filterAttendanceTable() {
   renderAttendanceTable(filtered);
 }
 
-// Ekspor Absensi
 function exportAttendanceExcel() {
   if (!processedAttendanceSummary.length) return alert("Tidak ada data absensi untuk diekspor!");
   const excelData = processedAttendanceSummary.map(item => ({
@@ -406,32 +427,227 @@ function exportAttendanceCSV() {
 }
 
 // ========================================================
-// 3. NAVIGATION TAB SWITCHER
+// 3. PAGE TARIF HONOR TUTOR (INPUT NOMINAL & REKAP 2026/2027)
+// ========================================================
+
+async function fetchSalarySettings() {
+  const tbody = document.getElementById('tarif-tutor-table-body');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-400">Memuat data tarif honor tutor...</td></tr>`;
+
+  try {
+    const data = await fetchGVizJson(URL_SALARYSETTINGS);
+    const rows = data.table.rows || [];
+
+    // Filter khusus tutor dari SalarySettings
+    tutorSalarySettings = [];
+
+    rows.forEach(row => {
+      const nama = String(getCellValue(row, 0)).trim();
+      // Mengambil kolom sesuai sheet SalarySettings
+      const honorSAC = parseFloat(getCellValue(row, 1)) || 50000;
+      const honorLOSSD = parseFloat(getCellValue(row, 10)) || 0;
+      const honorLOSSMP = parseFloat(getCellValue(row, 11)) || 0;
+      const honorPesantren = parseFloat(getCellValue(row, 13)) || 0;
+      const honorHybrid = parseFloat(getCellValue(row, 14)) || 75000;
+      const honorLOSSMADK = parseFloat(getCellValue(row, 15)) || 0;
+      const honorLOSSMALK = parseFloat(getCellValue(row, 16)) || 0;
+
+      if (nama && nama !== 'Nama Karyawan' && nama !== 'Admin') {
+        tutorSalarySettings.push({
+          nama,
+          honorSAC,
+          honorHybrid,
+          honorLOSSD,
+          honorLOSSMP,
+          honorPesantren,
+          honorLOSSMADK,
+          honorLOSSMALK
+        });
+      }
+    });
+
+    populateTutorDropdown();
+    renderTarifTutorTable();
+    renderKegiatanTable();
+
+  } catch (err) {
+    console.error("Error SalarySettings:", err);
+    // Fallback default jika sheet SalarySettings belum terisi penuh
+    useDefaultSalarySettings();
+  }
+}
+
+function useDefaultSalarySettings() {
+  // Nilai default awal jika data jaringan belum siap
+  const defaultTutors = [
+    "ANNE NURMELIYANTI, S.Pd", "SUHAYATI, S.Sos", "AGUSTINA PRAJAWATI", "FADIL MUHAMMAD, S.Pd",
+    "INDRA LESMANA, S.Pd", "LIA LIANTINA, S.Farm", "SHIFA AWIYAH", "YENI MAULIDAH",
+    "ALIYA MASRURAH", "MAJIIDAH TUNNISWAH", "ANGGIE BAROKAH", "MOHAMMAD GALANG ARIFKI",
+    "TANTI APRILIANTI, S.Pd", "GALIH PANGESTU WIJAYA", "RIBKA CHRISTIANI", "SYIFA'A NUR AFIYAH, S.Pd", "RIA RIYANTI, S.Pd"
+  ];
+
+  tutorSalarySettings = defaultTutors.map(nama => ({
+    nama,
+    honorSAC: 50000,
+    honorHybrid: 75000,
+    honorLOSSD: 0,
+    honorLOSSMP: 0,
+    honorPesantren: 0,
+    honorLOSSMADK: 0,
+    honorLOSSMALK: 0
+  }));
+
+  populateTutorDropdown();
+  renderTarifTutorTable();
+  renderKegiatanTable();
+}
+
+function populateTutorDropdown() {
+  const select = document.getElementById('select-tutor-name');
+  if (!select) return;
+
+  select.innerHTML = '<option value="">-- Pilih Nama Tutor --</option>';
+  tutorSalarySettings.forEach((tutor, idx) => {
+    const opt = document.createElement('option');
+    opt.value = idx;
+    opt.textContent = tutor.nama;
+    select.appendChild(opt);
+  });
+}
+
+function onTutorSelectChange() {
+  const select = document.getElementById('select-tutor-name');
+  const idx = select.value;
+
+  if (idx === "") {
+    resetTutorTarifForm();
+    return;
+  }
+
+  const t = tutorSalarySettings[idx];
+  document.getElementById('input-honor-sac').value = t.honorSAC || '';
+  document.getElementById('input-honor-hybrid').value = t.honorHybrid || '';
+  document.getElementById('input-honor-los-sd').value = t.honorLOSSD || '';
+  document.getElementById('input-honor-los-smp').value = t.honorLOSSMP || '';
+  document.getElementById('input-honor-pesantren').value = t.honorPesantren || '';
+  document.getElementById('input-honor-los-sma-dk').value = t.honorLOSSMADK || '';
+  document.getElementById('input-honor-los-sma-lk').value = t.honorLOSSMALK || '';
+}
+
+function saveTutorTarif() {
+  const select = document.getElementById('select-tutor-name');
+  const idx = select.value;
+
+  if (idx === "") {
+    alert("Silakan pilih Nama Tutor terlebih dahulu!");
+    return;
+  }
+
+  // Update objek di state
+  tutorSalarySettings[idx].honorSAC = parseFloat(document.getElementById('input-honor-sac').value) || 0;
+  tutorSalarySettings[idx].honorHybrid = parseFloat(document.getElementById('input-honor-hybrid').value) || 0;
+  tutorSalarySettings[idx].honorLOSSD = parseFloat(document.getElementById('input-honor-los-sd').value) || 0;
+  tutorSalarySettings[idx].honorLOSSMP = parseFloat(document.getElementById('input-honor-los-smp').value) || 0;
+  tutorSalarySettings[idx].honorPesantren = parseFloat(document.getElementById('input-honor-pesantren').value) || 0;
+  tutorSalarySettings[idx].honorLOSSMADK = parseFloat(document.getElementById('input-honor-los-sma-dk').value) || 0;
+  tutorSalarySettings[idx].honorLOSSMALK = parseFloat(document.getElementById('input-honor-los-sma-lk').value) || 0;
+
+  renderTarifTutorTable();
+  alert(`Nominal honor untuk ${tutorSalarySettings[idx].nama} berhasil diperbarui!`);
+}
+
+function resetTutorTarifForm() {
+  document.getElementById('select-tutor-name').value = "";
+  document.getElementById('input-honor-sac').value = "";
+  document.getElementById('input-honor-hybrid').value = "";
+  document.getElementById('input-honor-los-sd').value = "";
+  document.getElementById('input-honor-los-smp').value = "";
+  document.getElementById('input-honor-pesantren').value = "";
+  document.getElementById('input-honor-los-sma-dk').value = "";
+  document.getElementById('input-honor-los-sma-lk').value = "";
+}
+
+function renderTarifTutorTable() {
+  const tbody = document.getElementById('tarif-tutor-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (tutorSalarySettings.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-400">Belum ada data tarif tutor.</td></tr>`;
+    return;
+  }
+
+  tutorSalarySettings.forEach((item, idx) => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 transition border-b border-slate-200';
+    tr.innerHTML = `
+      <td class="p-2.5 text-center font-semibold text-slate-500">${idx + 1}</td>
+      <td class="p-2.5 font-bold text-slate-900">${item.nama}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorSAC)}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorHybrid)}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorLOSSD)}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorLOSSMP)}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorPesantren)}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorLOSSMADK)}</td>
+      <td class="p-2.5 text-right font-medium text-slate-700">${formatRupiah(item.honorLOSSMALK)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderKegiatanTable() {
+  const tbody = document.getElementById('kegiatan-table-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  daftarHonorKegiatanMaster.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 transition border-b border-slate-200';
+    tr.innerHTML = `
+      <td class="p-2.5 text-center font-semibold text-slate-500">${item.no}</td>
+      <td class="p-2.5 font-semibold text-slate-800">${item.kegiatan}</td>
+      <td class="p-2.5 text-right font-bold text-[#2271b1]">${formatRupiah(item.honor)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ========================================================
+// 4. NAVIGATION TAB SWITCHER
 // ========================================================
 
 function switchTab(tab) {
   const pageBeranda = document.getElementById('page-beranda');
   const pageAbsensi = document.getElementById('page-absensi');
+  const pageTarif = document.getElementById('page-tarif');
+
   const navBeranda = document.getElementById('nav-beranda');
   const navAbsensi = document.getElementById('nav-absensi');
+  const navTarif = document.getElementById('nav-tarif');
+
   const pageTitleTop = document.getElementById('page-title-topbar');
+
+  // Reset visibilitas
+  pageBeranda.classList.add('hidden');
+  pageAbsensi.classList.add('hidden');
+  pageTarif.classList.add('hidden');
+
+  navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
+  navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
+  navTarif.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
 
   if (tab === 'beranda') {
     pageBeranda.classList.remove('hidden');
-    pageAbsensi.classList.add('hidden');
-
     navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
-    navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
-
     pageTitleTop.innerText = "Beranda (Payroll Tutor)";
   } else if (tab === 'absensi') {
-    pageBeranda.classList.add('hidden');
     pageAbsensi.classList.remove('hidden');
-
     navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
-    navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
-
     pageTitleTop.innerText = "Rekap Absensi Tutor";
+  } else if (tab === 'tarif') {
+    pageTarif.classList.remove('hidden');
+    navTarif.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
+    pageTitleTop.innerText = "Setting Tarif Honor Tutor";
   }
 
   if (typeof lucide !== 'undefined') lucide.createIcons();
