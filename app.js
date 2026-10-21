@@ -166,6 +166,7 @@ async function fetchAllData() {
   await fetchSalarySettings();
   await fetchPayrollData();
   populateKelolaDropdowns();
+  populateIndividualTutorDropdown();
 }
 
 function calculateSessionInfo(tutorName, category, kelas) {
@@ -185,7 +186,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
   if (tutorSetting) {
     if (isHybridZahra) {
       rate = tutorSetting.honorSAC || 50000;
-      labelTag = 'SAC';
+      labelTag = 'SAC (Hybrid Zahra)';
       detailClass = kls || 'Hybrid Zahra';
     } else if (cat.includes('ARIANNA') || kls.includes('ARIANNA')) {
       rate = tutorSetting.honorHybrid || tutorSetting.honorSAC || 75000;
@@ -212,7 +213,7 @@ function calculateSessionInfo(tutorName, category, kelas) {
       detailClass = kls && !kls.includes('LOS') ? `SMA (${kls})` : 'SMA (Fadil)';
     } else if (cat.includes('LOS')) {
       rate = tutorSetting.honorLOSSD || tutorSetting.honorLOSSMP || 97500;
-      labelTag = 'LOS SD/General';
+      labelTag = 'LOS General';
       detailClass = kls && !kls.includes('LOS') ? `LOS (${kls})` : 'LOS';
     } else {
       rate = tutorSetting.honorSAC || 50000;
@@ -328,6 +329,7 @@ async function fetchPayrollData() {
 
     processPayrollData();
     renderKelolaSesiPage();
+    renderIndividualPayrollPage();
 
   } catch (err) {
     console.error("Error Payroll:", err);
@@ -464,7 +466,6 @@ function filterPayrollTable() {
   renderPayrollTable(filtered);
 }
 
-// EKSPOR EXCEL
 function exportPayrollExcel() {
   if (!processedPayrollSummary || processedPayrollSummary.length === 0) {
     alert("Tidak ada data payroll untuk diekspor!");
@@ -637,7 +638,6 @@ function renderKelolaSesiPage() {
 
   const excludedIds = new Set(getExcludedSessionIds());
 
-  // Filter Sesi Sesuai Tutor & Tanggal
   const matchedSessions = rawAllSessions.filter(s => {
     if (targetTutorClean && cleanName(s.tutor) !== targetTutorClean) return false;
     if (targetDate && s.tanggal !== targetDate) return false;
@@ -686,7 +686,6 @@ function renderKelolaSesiPage() {
     });
   }
 
-  // Render Daftar Sesi yang Dihapus/Dikecualikan
   const deletedItems = rawAllSessions.filter(s => excludedIds.has(s.id) || excludedIds.has(s.dedupKey));
   excludedContainer.innerHTML = '';
 
@@ -725,6 +724,7 @@ function excludeSession(id, dedupKey) {
 
   processPayrollData();
   renderKelolaSesiPage();
+  renderIndividualPayrollPage();
 }
 
 function restoreSession(id, dedupKey) {
@@ -738,6 +738,7 @@ function restoreSession(id, dedupKey) {
 
   processPayrollData();
   renderKelolaSesiPage();
+  renderIndividualPayrollPage();
 }
 
 function resetAllExclusions() {
@@ -746,11 +747,145 @@ function resetAllExclusions() {
     rawPayrollData = [...rawAllSessions];
     processPayrollData();
     renderKelolaSesiPage();
+    renderIndividualPayrollPage();
   }
 }
 
 // ========================================================
-// 3. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
+// 3. PAGE BARU: RINCIAN SLIP HONOR INDIVIDUAL TUTOR
+// ========================================================
+
+function populateIndividualTutorDropdown() {
+  const select = document.getElementById('individual-select-tutor');
+  if (!select) return;
+
+  const tutorSet = new Set();
+  rawAllSessions.forEach(s => tutorSet.add(s.tutor));
+
+  select.innerHTML = '<option value="">-- Pilih Nama Tutor --</option>';
+  Array.from(tutorSet).sort().forEach(nama => {
+    const opt = document.createElement('option');
+    opt.value = cleanName(nama);
+    opt.textContent = nama;
+    select.appendChild(opt);
+  });
+}
+
+function renderIndividualPayrollPage() {
+  const selectTutor = document.getElementById('individual-select-tutor');
+  const startDateInput = document.getElementById('individual-start-date');
+  const endDateInput = document.getElementById('individual-end-date');
+
+  const namaTutorLabel = document.getElementById('indiv-nama-tutor');
+  const periodeLabel = document.getElementById('indiv-periode-label');
+  const hadirCountLabel = document.getElementById('indiv-hadir-count');
+  const totalSesiLabel = document.getElementById('indiv-total-sesi');
+  const totalHonorLabel = document.getElementById('indiv-total-honor');
+  const explanationBox = document.getElementById('indiv-explanation-box');
+  const tbody = document.getElementById('indiv-table-body');
+
+  if (!selectTutor || !tbody) return;
+
+  const targetTutorClean = selectTutor.value;
+  const startDate = startDateInput.value;
+  const endDate = endDateInput.value;
+
+  if (!targetTutorClean) {
+    namaTutorLabel.innerText = '-';
+    periodeLabel.innerText = startDate || endDate ? `${startDate || 'Awal'} s/d ${endDate || 'Akhir'}` : 'Semua Periode';
+    hadirCountLabel.innerText = '0 Hari';
+    totalSesiLabel.innerText = '0 Sesi';
+    totalHonorLabel.innerText = 'Rp 0';
+    explanationBox.innerHTML = `<p class="text-slate-500 italic">Silakan pilih nama tutor di atas untuk melihat rincian penjelasan.</p>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Silakan pilih tutor terlebih dahulu.</td></tr>`;
+    return;
+  }
+
+  // Filter Sesi Aktif Tutor Ini
+  const tutorSessions = rawPayrollData.filter(s => {
+    if (cleanName(s.tutor) !== targetTutorClean) return false;
+    if (startDate && s.tanggal < startDate) return false;
+    if (endDate && s.tanggal > endDate) return false;
+    return true;
+  });
+
+  tutorSessions.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+
+  const displayTutorName = tutorSessions.length > 0 ? tutorSessions[0].tutor : (selectTutor.options[selectTutor.selectedIndex]?.text || '-');
+  namaTutorLabel.innerText = displayTutorName;
+  periodeLabel.innerText = (startDate || endDate) ? `${startDate || 'Awal'} s/d ${endDate || 'Akhir'}` : 'Semua Periode';
+
+  const datesSet = new Set();
+  let totalHonor = 0;
+  const breakdownCounts = {};
+  const explanationList = [];
+
+  tbody.innerHTML = '';
+
+  if (tutorSessions.length === 0) {
+    hadirCountLabel.innerText = '0 Hari';
+    totalSesiLabel.innerText = '0 Sesi';
+    totalHonorLabel.innerText = 'Rp 0';
+    explanationBox.innerHTML = `<p class="text-amber-700 bg-amber-50 p-2 rounded">Tidak ada record mengajar untuk <b>${displayTutorName}</b> pada rentang tanggal yang dipilih.</p>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400">Tidak ada sesi mengajar ditemukan.</td></tr>`;
+    return;
+  }
+
+  tutorSessions.forEach((s, idx) => {
+    if (s.tanggal) datesSet.add(s.tanggal);
+
+    const info = calculateSessionInfo(s.tutor, s.kategori, s.kelas);
+    totalHonor += info.rate;
+
+    if (!breakdownCounts[info.labelTag]) {
+      breakdownCounts[info.labelTag] = { count: 0, rate: info.rate, subtotal: 0 };
+    }
+    breakdownCounts[info.labelTag].count += 1;
+    breakdownCounts[info.labelTag].subtotal += info.rate;
+
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 border-b border-slate-200';
+    tr.innerHTML = `
+      <td class="p-3 text-center font-semibold text-slate-500">${idx + 1}</td>
+      <td class="p-3 font-medium text-slate-800">${s.tanggal || '-'}</td>
+      <td class="p-3 font-semibold text-slate-700">${s.kategori}</td>
+      <td class="p-3 text-center font-mono">${s.jamMasuk || '-'} - ${s.jamKeluar || '-'}</td>
+      <td class="p-3 font-medium text-slate-800">${s.kelas || '-'}</td>
+      <td class="p-3 text-slate-600">${s.mapel || '-'}</td>
+      <td class="p-3 text-right font-medium text-slate-700">${formatRupiah(info.rate)}</td>
+      <td class="p-3 text-right font-bold text-emerald-700">${formatRupiah(info.rate)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  hadirCountLabel.innerText = `${datesSet.size} Hari`;
+  totalSesiLabel.innerText = `${tutorSessions.length} Sesi`;
+  totalHonorLabel.innerText = formatRupiah(totalHonor);
+
+  // Buat Teks Penjelasan Kalkulasi Honor yang Jelas
+  let expHtml = `<ul class="space-y-1.5 list-disc list-inside font-medium text-slate-800">`;
+  for (const [label, data] of Object.entries(breakdownCounts)) {
+    expHtml += `<li><b>${data.count}x Sesi ${label}</b> @ ${formatRupiah(data.rate)} = <span class="font-bold text-emerald-800">${formatRupiah(data.subtotal)}</span></li>`;
+  }
+  expHtml += `</ul>`;
+
+  // Tambahan Catatan Aturan Transparan
+  expHtml += `
+    <div class="mt-3 pt-2 border-t border-emerald-200/80 text-[11px] text-slate-600 space-y-1">
+      <p>💡 <b>Ketentuan Penghitungan:</b></p>
+      <p>• Sesi dengan keterangan <b>"Hybrid Zahra"</b> dihitung sebagai kategori <b>SAC</b> dengan nominal honor SAC tutor (${formatRupiah(calculateSessionInfo(displayTutorName, 'SAC', '').rate)}/sesi).</p>
+      <p>• Sesi ganda/double submit pada jam & kelas yang persis sama telah di-filter otomatis.</p>
+      <p>• <b>Total Akhir Honorarium:</b> <span class="font-bold text-emerald-800 text-sm">${formatRupiah(totalHonor)}</span></p>
+    </div>
+  `;
+
+  explanationBox.innerHTML = expHtml;
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// ========================================================
+// 4. PAGE REKAP ABSENSI (ATTENDANCE + USERS)
 // ========================================================
 
 async function fetchAttendanceAndUsers() {
@@ -927,7 +1062,7 @@ function exportAttendanceCSV() {
 }
 
 // ========================================================
-// 4. PAGE TARIF HONOR TUTOR
+// 5. PAGE TARIF HONOR TUTOR
 // ========================================================
 
 async function fetchSalarySettings() {
@@ -1123,17 +1258,19 @@ function renderKegiatanTable() {
 }
 
 // ========================================================
-// 5. NAVIGATION TAB SWITCHER
+// 6. NAVIGATION TAB SWITCHER
 // ========================================================
 
 function switchTab(tab) {
   const pageBeranda = document.getElementById('page-beranda');
   const pageKelola = document.getElementById('page-kelola');
+  const pageIndividual = document.getElementById('page-individual');
   const pageAbsensi = document.getElementById('page-absensi');
   const pageTarif = document.getElementById('page-tarif');
 
   const navBeranda = document.getElementById('nav-beranda');
   const navKelola = document.getElementById('nav-kelola');
+  const navIndividual = document.getElementById('nav-individual');
   const navAbsensi = document.getElementById('nav-absensi');
   const navTarif = document.getElementById('nav-tarif');
 
@@ -1141,11 +1278,13 @@ function switchTab(tab) {
 
   pageBeranda.classList.add('hidden');
   pageKelola.classList.add('hidden');
+  pageIndividual.classList.add('hidden');
   pageAbsensi.classList.add('hidden');
   pageTarif.classList.add('hidden');
 
   navBeranda.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
   navKelola.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
+  navIndividual.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
   navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
   navTarif.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition';
 
@@ -1158,6 +1297,11 @@ function switchTab(tab) {
     navKelola.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
     pageTitleTop.innerText = "Kelola / Hapus Sesi Tutor";
     renderKelolaSesiPage();
+  } else if (tab === 'individual') {
+    pageIndividual.classList.remove('hidden');
+    navIndividual.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';
+    pageTitleTop.innerText = "Rincian Slip Honor Tutor";
+    renderIndividualPayrollPage();
   } else if (tab === 'absensi') {
     pageAbsensi.classList.remove('hidden');
     navAbsensi.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold bg-[#2271b1] text-white transition';

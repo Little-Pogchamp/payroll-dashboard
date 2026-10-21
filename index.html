@@ -10,11 +10,19 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- SheetJS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #print-area, #print-area * { visibility: visible; }
+      #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+    }
+  </style>
 </head>
 <body class="bg-[#f0f0f1] text-[#2c3338] antialiased min-h-screen font-sans flex flex-col">
 
   <!-- WordPress Top Admin Bar -->
-  <header class="bg-[#1d2327] text-white h-10 flex items-center justify-between px-4 sticky top-0 z-30 shadow-md text-xs select-none">
+  <header class="bg-[#1d2327] text-white h-10 flex items-center justify-between px-4 sticky top-0 z-30 shadow-md text-xs select-none no-print">
     <div class="flex items-center gap-4">
       <div class="flex items-center gap-2 font-bold hover:text-[#2271b1] cursor-pointer transition">
         <i data-lucide="wordpress" class="w-4 h-4 text-slate-300"></i>
@@ -36,7 +44,7 @@
 
   <div class="flex flex-1 relative">
     <!-- WordPress Left Sidebar Navigation -->
-    <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 h-[calc(100vh-2.5rem)] sticky top-10 flex flex-col justify-between select-none z-20">
+    <aside class="w-56 bg-[#1d2327] text-slate-300 flex-shrink-0 h-[calc(100vh-2.5rem)] sticky top-10 flex flex-col justify-between select-none z-20 no-print">
       <div>
         <div class="p-4 border-b border-slate-800">
           <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">NAVIGASI UTAMA</p>
@@ -48,19 +56,25 @@
             <span>Beranda (Payroll)</span>
           </button>
 
-          <!-- Menu 2 Baru: Kelola / Hapus Sesi -->
+          <!-- Menu 2: Kelola / Hapus Sesi -->
           <button id="nav-kelola" onclick="switchTab('kelola')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="scissors" class="w-4 h-4 text-amber-400"></i>
             <span>Kelola / Hapus Sesi</span>
           </button>
+
+          <!-- Menu 3 BARU: Rincian Slip Honor Tutor -->
+          <button id="nav-individual" onclick="switchTab('individual')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
+            <i data-lucide="receipt" class="w-4 h-4 text-emerald-400"></i>
+            <span>Rincian Slip Honor Tutor</span>
+          </button>
           
-          <!-- Menu 3: Rekap Absensi -->
+          <!-- Menu 4: Rekap Absensi -->
           <button id="nav-absensi" onclick="switchTab('absensi')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="clipboard-list" class="w-4 h-4"></i>
             <span>Rekap Absensi Tutor</span>
           </button>
 
-          <!-- Menu 4: Tarif Honor Tutor -->
+          <!-- Menu 5: Tarif Honor Tutor -->
           <button id="nav-tarif" onclick="switchTab('tarif')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="settings" class="w-4 h-4"></i>
             <span>Tarif Honor Tutor</span>
@@ -158,7 +172,7 @@
         </div>
       </section>
 
-      <!-- PAGE 2 BARU: KELOLA / HAPUS SESI TUTOR (ADJUSTMENT) -->
+      <!-- PAGE 2: KELOLA / HAPUS SESI TUTOR -->
       <section id="page-kelola" class="space-y-6 hidden">
         <div class="border-b border-slate-300 pb-4">
           <h1 class="text-2xl font-bold text-[#1d2327]">Kelola / Hapus Sesi SAC & LOS Tutor</h1>
@@ -225,7 +239,113 @@
         </div>
       </section>
 
-      <!-- PAGE 3: REKAP ABSENSI -->
+      <!-- PAGE 3 BARU: RINCIAN SLIP HONOR INDIVIDUAL TUTOR -->
+      <section id="page-individual" class="space-y-6 hidden">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2 no-print">
+          <div>
+            <h1 class="text-2xl font-bold text-[#1d2327]">Rincian & Slip Honor Per Tutor</h1>
+            <p class="text-xs text-slate-500 mt-1">Pilih tutor untuk melihat breakdown lengkap perhitungan honor beserta rincian tanggal dan jenis sesinya.</p>
+          </div>
+          <button onclick="window.print()" class="flex items-center gap-1.5 bg-[#2271b1] hover:bg-[#135e96] text-white font-medium px-4 py-2 rounded text-xs transition shadow-sm">
+            <i data-lucide="printer" class="w-4 h-4"></i> Cetak / Simpan Slip PDF
+          </button>
+        </div>
+
+        <!-- Filter Selector Individual -->
+        <div class="bg-white p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs no-print">
+          <div>
+            <label class="block font-bold text-slate-700 uppercase mb-1">1. Pilih Nama Tutor <span class="text-red-500">*</span></label>
+            <select id="individual-select-tutor" onchange="renderIndividualPayrollPage()" class="w-full px-3 py-2 border border-slate-300 rounded font-semibold text-slate-900 focus:ring-2 focus:ring-[#2271b1] focus:outline-none bg-white">
+              <option value="">-- Pilih Tutor --</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Mulai</label>
+            <input type="date" id="individual-start-date" onchange="renderIndividualPayrollPage()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+          <div>
+            <label class="block font-semibold uppercase text-slate-600 mb-1">Tanggal Selesai</label>
+            <input type="date" id="individual-end-date" onchange="renderIndividualPayrollPage()" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-[#2271b1] focus:outline-none bg-white">
+          </div>
+        </div>
+
+        <!-- Printable Slip Container -->
+        <div id="print-area" class="space-y-6">
+          <!-- Header Slip (Hanya Muncul di Cetak/Preview) -->
+          <div class="bg-white p-6 rounded border border-slate-300 shadow-sm space-y-4">
+            <div class="border-b border-slate-200 pb-4 flex justify-between items-center">
+              <div>
+                <h2 class="text-xl font-bold text-[#1d2327]">SLIP HONORARIUM TUTOR</h2>
+                <p class="text-xs text-slate-500 font-semibold">HOMESCHOOLING CARNATION CIREBON</p>
+              </div>
+              <div class="text-right text-xs">
+                <p class="text-slate-500">Periode:</p>
+                <p id="indiv-periode-label" class="font-bold text-slate-800">-</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+              <div>
+                <p class="text-slate-500">Nama Tutor:</p>
+                <p id="indiv-nama-tutor" class="font-bold text-slate-900 text-sm">-</p>
+              </div>
+              <div>
+                <p class="text-slate-500">Total Hari Hadir:</p>
+                <p id="indiv-hadir-count" class="font-bold text-slate-800 text-sm">0 Hari</p>
+              </div>
+              <div>
+                <p class="text-slate-500">Total Sesi Mengajar:</p>
+                <p id="indiv-total-sesi" class="font-bold text-slate-800 text-sm">0 Sesi</p>
+              </div>
+              <div>
+                <p class="text-slate-500">Total Honor Diterima:</p>
+                <p id="indiv-total-honor" class="font-bold text-[#059669] text-base">Rp 0</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Penjelasan Alasan Perhitungan Honor -->
+          <div class="bg-emerald-50/60 border border-emerald-200 p-5 rounded space-y-3">
+            <h3 class="font-bold text-xs uppercase text-emerald-900 flex items-center gap-2">
+              <i data-lucide="help-circle" class="w-4 h-4 text-emerald-700"></i>
+              Penjelasan Rincian Perhitungan Honor:
+            </h3>
+            <div id="indiv-explanation-box" class="space-y-2 text-xs text-slate-800 leading-relaxed">
+              <p class="text-slate-500 italic">Silakan pilih nama tutor di atas untuk melihat rincian penjelasan.</p>
+            </div>
+          </div>
+
+          <!-- Tabel Sesi Mengajar Individu -->
+          <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden">
+            <div class="p-3.5 bg-slate-100 border-b border-slate-300 font-bold text-xs uppercase text-slate-700">
+              Rincian Sesi Mengajar Per Tanggal
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                    <th class="p-3 text-center w-10">No</th>
+                    <th class="p-3">Tanggal</th>
+                    <th class="p-3">Kategori</th>
+                    <th class="p-3 text-center">Jam</th>
+                    <th class="p-3">Kelas / Keterangan</th>
+                    <th class="p-3">Mata Pelajaran</th>
+                    <th class="p-3 text-right">Tarif / Sesi</th>
+                    <th class="p-3 text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody id="indiv-table-body" class="divide-y divide-slate-200">
+                  <tr>
+                    <td colspan="8" class="p-8 text-center text-slate-400">Silakan pilih tutor terlebih dahulu.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PAGE 4: REKAP ABSENSI -->
       <section id="page-absensi" class="space-y-6 hidden">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-300 pb-4 gap-2">
           <div>
@@ -309,7 +429,7 @@
         </div>
       </section>
 
-      <!-- PAGE 4: TARIF HONOR TUTOR -->
+      <!-- PAGE 5: TARIF HONOR TUTOR -->
       <section id="page-tarif" class="space-y-6 hidden">
         <div class="border-b border-slate-300 pb-4">
           <h1 class="text-2xl font-bold text-[#1d2327]">Input & Setting Nominal Honor Tutor 2026/2027</h1>
