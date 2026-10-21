@@ -56,10 +56,10 @@
             <span>Beranda (Payroll)</span>
           </button>
 
-          <!-- Menu 2: Kelola / Hapus Sesi -->
+          <!-- Menu 2: Kelola / Hapus Sesi & Terlambat -->
           <button id="nav-kelola" onclick="switchTab('kelola')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-xs font-semibold hover:bg-[#2c3338] text-slate-300 hover:text-white transition">
             <i data-lucide="scissors" class="w-4 h-4 text-amber-400"></i>
-            <span>Kelola / Hapus Sesi</span>
+            <span>Kelola Sesi & Denda</span>
           </button>
 
           <!-- Menu 3: Rincian Slip Honor Tutor -->
@@ -172,11 +172,11 @@
         </div>
       </section>
 
-      <!-- PAGE 2: KELOLA / HAPUS SESI TUTOR -->
+      <!-- PAGE 2: KELOLA / HAPUS SESI & DENDA TERLAMBAT -->
       <section id="page-kelola" class="space-y-6 hidden">
         <div class="border-b border-slate-300 pb-4">
-          <h1 class="text-2xl font-bold text-[#1d2327]">Kelola / Hapus Sesi SAC & LOS Tutor</h1>
-          <p class="text-xs text-slate-500 mt-1">Pilih tutor dan tanggal untuk melihat seluruh rincian sesi mengajar, lalu hapus/abaikan sesi ganda agar tidak terhitung di Beranda Payroll.</p>
+          <h1 class="text-2xl font-bold text-[#1d2327]">Kelola Sesi & Pembatalan Denda Terlambat</h1>
+          <p class="text-xs text-slate-500 mt-1">Hapus sesi ganda atau **hapus denda keterlambatan** apabila tutor mengalami kendala HP mati/aplikasi error saat absen.</p>
         </div>
 
         <!-- Filter Selector -->
@@ -193,15 +193,31 @@
           </div>
         </div>
 
+        <!-- Status Terlambat & Tombol Hapus Denda -->
+        <div id="kelola-late-warning-box" class="hidden bg-amber-50 border border-amber-300 p-4 rounded shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div class="flex items-center gap-3">
+            <div class="p-2 bg-amber-200 rounded-full text-amber-800">
+              <i data-lucide="clock-alert" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <p class="font-bold text-amber-900 text-xs uppercase" id="late-box-title">Terdeteksi Terlambat Presensi</p>
+              <p class="text-xs text-amber-800 mt-0.5" id="late-box-desc">Tutor ini tercatat terlambat pada tanggal yang dipilih dan berpotensi terkena denda 50% pada 1 SAC pertama.</p>
+            </div>
+          </div>
+          <div id="late-box-action">
+            <!-- Dynamic button inserted by JS -->
+          </div>
+        </div>
+
         <!-- Daftar Sesi Aktif -->
         <div class="bg-white rounded border border-slate-300 shadow-sm overflow-hidden">
           <div class="p-4 bg-slate-100 border-b border-slate-300 flex justify-between items-center">
             <h2 class="font-bold text-xs uppercase text-slate-700 flex items-center gap-2">
               <i data-lucide="list-checks" class="w-4 h-4 text-emerald-600"></i>
-              Daftar Sesi Mengajar Terdeteksi (SAC & LOS)
+              Daftar Sesi Mengajar Terdeteksi
             </h2>
             <button onclick="resetAllExclusions()" class="text-xs text-red-600 hover:text-red-800 underline flex items-center gap-1 font-medium">
-              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset Semua Sesi yang Dihapus
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset Semua Sesi & Denda
             </button>
           </div>
           <div class="overflow-x-auto">
@@ -209,13 +225,13 @@
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 uppercase">
                   <th class="p-3 text-center w-10">No</th>
-                  <th class="p-3">Sumber Data</th>
+                  <th class="p-3">Sumber</th>
                   <th class="p-3">Nama Tutor</th>
                   <th class="p-3 text-center">Kategori</th>
                   <th class="p-3 text-center">Jam</th>
                   <th class="p-3">Kelas / Keterangan</th>
                   <th class="p-3">Mata Pelajaran</th>
-                  <th class="p-3 text-center">Aksi / Hapus</th>
+                  <th class="p-3 text-center">Aksi / Hapus Sesi</th>
                 </tr>
               </thead>
               <tbody id="kelola-table-body" class="divide-y divide-slate-200">
@@ -227,14 +243,14 @@
           </div>
         </div>
 
-        <!-- Tabel Sesi yang Dihapus/Dikecualikan -->
+        <!-- Tabel Sesi / Denda yang Dikecualikan -->
         <div class="bg-slate-50 rounded border border-slate-300 p-4 space-y-3">
           <h3 class="font-bold text-xs text-red-700 uppercase flex items-center gap-1.5">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
-            Daftar Sesi yang Sedang Dihapus / Dikecualikan
+            Daftar Sesi yang Dihapus / Denda Terlambat yang Dibatalkan
           </h3>
           <div id="excluded-list-container" class="space-y-2 text-xs">
-            <p class="text-slate-500 italic">Belum ada sesi yang dihapus.</p>
+            <p class="text-slate-500 italic">Belum ada item yang dihapus.</p>
           </div>
         </div>
       </section>
