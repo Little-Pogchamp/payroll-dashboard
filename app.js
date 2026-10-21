@@ -208,17 +208,38 @@ async function fetchPayrollData() {
     const data = await fetchGVizJson(URL_DATAFORM);
     const rows = data.table.rows || [];
 
-    // 1. Ambil data dari sheet DataForm
-    const dataFormItems = rows.map(row => {
+    // 1. Ambil data dari sheet DataForm dengan DEDUPLIKASI BARIS IDENTIK (anti double-submit)
+    const dataFormItems = [];
+    const seenDataFormKeys = new Set();
+
+    rows.forEach(row => {
       const isoDate = parseToIsoDate(getCellValue(row, 0), getCellFormatted(row, 0));
-      return {
-        tanggal: isoDate,
-        tutor: String(getCellValue(row, 1)).trim(),
-        kategori: String(getCellValue(row, 2)).trim().toUpperCase(),
-        kelas: String(getCellValue(row, 5)).trim(),
-        source: 'DataForm'
-      };
-    }).filter(item => item.tutor !== '' && item.tutor !== 'Tanpa Nama' && item.tutor !== 'Nama Tutor');
+      const tutor = String(getCellValue(row, 1)).trim();
+      const kategori = String(getCellValue(row, 2)).trim().toUpperCase();
+      const jamMasuk = String(getCellValue(row, 3)).trim();
+      const jamKeluar = String(getCellValue(row, 4)).trim();
+      const kelas = String(getCellValue(row, 5)).trim();
+      const mapel = String(getCellValue(row, 6)).trim();
+
+      if (tutor && tutor !== 'Tanpa Nama' && tutor !== 'Nama Tutor') {
+        // Kunci unik untuk memfilter entri yang persis sama (double submit)
+        const dedupKey = `${isoDate}|${cleanName(tutor)}|${kategori}|${jamMasuk}|${jamKeluar}|${kelas.toLowerCase()}|${mapel.toLowerCase()}`;
+
+        if (!seenDataFormKeys.has(dedupKey)) {
+          seenDataFormKeys.add(dedupKey);
+          dataFormItems.push({
+            tanggal: isoDate,
+            tutor: tutor,
+            kategori: kategori,
+            jamMasuk: jamMasuk,
+            jamKeluar: jamKeluar,
+            kelas: kelas,
+            mapel: mapel,
+            source: 'DataForm'
+          });
+        }
+      }
+    });
 
     // 2. Ambil presensi LOS dari sheet Attendance
     const attendanceLosItems = [];
@@ -250,7 +271,7 @@ async function fetchPayrollData() {
       }
     });
 
-    // 3. Gabungkan kedua sumber data (Deduplikasi cerdas dengan cleanName)
+    // 3. Gabungkan DataForm & Attendance (mencegah duplikasi ganda antara DataForm & Attendance)
     const combinedData = [...dataFormItems];
 
     attendanceLosItems.forEach(attItem => {
@@ -578,7 +599,6 @@ async function fetchAttendanceAndUsers() {
 
       const isoDate = parseToIsoDate(getCellValue(row, 2), getCellFormatted(row, 2));
 
-      // Pindai seluruh sel di baris untuk mendeteksi catatan kegiatan/LOS
       let allRowTextParts = [];
       if (row && row.c) {
         row.c.forEach(cell => {
